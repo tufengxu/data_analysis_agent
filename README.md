@@ -154,6 +154,11 @@ ruff format src tests
 mypy src
 ```
 
+## Quality Gate (Definition of Done)
+
+每次迭代须通过 `python scripts/quality_gate.py`(ruff / format / mypy / pytest / 架构漂移检测),
+由阻断式 Stop hook 强制。详见 `docs/QUALITY_BAR.md`、`docs/DEVELOPMENT.md`、`docs/ARCHITECTURE.md`。
+
 ## Architecture Reference
 
 See `docs/ARCHITECTURE.md` for the module map (machine-checked manifest), subsystem
