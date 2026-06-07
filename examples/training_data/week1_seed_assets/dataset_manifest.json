@@ -1,0 +1,900 @@
+[
+  {
+    "dataset_id": "retail_sales_orders",
+    "file_name": "retail_sales_orders.csv",
+    "relative_path": "data/retail_sales_orders.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/retail_sales_orders.csv",
+    "domain": "retail",
+    "description": "multi-channel retail order performance",
+    "row_count": 720,
+    "columns": [
+      "order_id",
+      "order_date",
+      "region",
+      "channel",
+      "category",
+      "product",
+      "units",
+      "unit_price",
+      "discount_pct",
+      "revenue",
+      "gross_margin",
+      "returned"
+    ],
+    "date_column": "order_date",
+    "dimensions": [
+      "region",
+      "channel",
+      "category",
+      "product"
+    ],
+    "metrics": [
+      "revenue",
+      "gross_margin",
+      "units",
+      "discount_pct"
+    ],
+    "quality_issues": [
+      "returns",
+      "discount outliers",
+      "seasonality"
+    ],
+    "business_questions": [
+      "各渠道收入和毛利贡献是否匹配",
+      "哪些品类的折扣侵蚀了毛利",
+      "退货是否集中在特定区域或产品"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "ecommerce_marketing_funnel",
+    "file_name": "ecommerce_marketing_funnel.csv",
+    "relative_path": "data/ecommerce_marketing_funnel.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/ecommerce_marketing_funnel.csv",
+    "domain": "marketing",
+    "description": "paid marketing funnel efficiency",
+    "row_count": 540,
+    "columns": [
+      "date",
+      "campaign",
+      "channel",
+      "market",
+      "impressions",
+      "clicks",
+      "spend",
+      "signups",
+      "purchases",
+      "revenue"
+    ],
+    "date_column": "date",
+    "dimensions": [
+      "channel",
+      "campaign",
+      "market"
+    ],
+    "metrics": [
+      "spend",
+      "clicks",
+      "purchases",
+      "revenue"
+    ],
+    "quality_issues": [
+      "zero conversions",
+      "high CAC outliers",
+      "weekly seasonality"
+    ],
+    "business_questions": [
+      "哪些渠道 ROI 最高",
+      "哪些活动花费高但转化低",
+      "漏斗转化率是否在近期恶化"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "subscription_saas_metrics",
+    "file_name": "subscription_saas_metrics.csv",
+    "relative_path": "data/subscription_saas_metrics.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/subscription_saas_metrics.csv",
+    "domain": "saas",
+    "description": "subscription account health and MRR movement",
+    "row_count": 640,
+    "columns": [
+      "month",
+      "account_id",
+      "segment",
+      "plan",
+      "region",
+      "seats",
+      "mrr",
+      "active_users",
+      "churned",
+      "expansion_mrr",
+      "support_tickets"
+    ],
+    "date_column": "month",
+    "dimensions": [
+      "segment",
+      "plan",
+      "region"
+    ],
+    "metrics": [
+      "mrr",
+      "active_users",
+      "expansion_mrr",
+      "support_tickets"
+    ],
+    "quality_issues": [
+      "churn flags",
+      "expansion spikes",
+      "support burden"
+    ],
+    "business_questions": [
+      "哪个客户分层贡献了主要 MRR",
+      "活跃用户数和续费风险是否相关",
+      "扩容收入是否集中在少数计划"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "customer_support_tickets",
+    "file_name": "customer_support_tickets.csv",
+    "relative_path": "data/customer_support_tickets.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/customer_support_tickets.csv",
+    "domain": "support",
+    "description": "support ticket resolution and customer satisfaction",
+    "row_count": 680,
+    "columns": [
+      "ticket_id",
+      "created_date",
+      "channel",
+      "product_area",
+      "priority",
+      "first_response_minutes",
+      "resolution_hours",
+      "csat_score",
+      "reopened",
+      "escalated"
+    ],
+    "date_column": "created_date",
+    "dimensions": [
+      "channel",
+      "product_area",
+      "priority"
+    ],
+    "metrics": [
+      "first_response_minutes",
+      "resolution_hours",
+      "csat_score",
+      "reopened"
+    ],
+    "quality_issues": [
+      "SLA breach outliers",
+      "missing CSAT",
+      "escalations"
+    ],
+    "business_questions": [
+      "哪些产品模块拖慢了解决时长",
+      "首次响应是否影响 CSAT",
+      "升级工单是否集中在高优先级问题"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "manufacturing_quality_inspection",
+    "file_name": "manufacturing_quality_inspection.csv",
+    "relative_path": "data/manufacturing_quality_inspection.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/manufacturing_quality_inspection.csv",
+    "domain": "manufacturing",
+    "description": "factory quality inspection and downtime",
+    "row_count": 520,
+    "columns": [
+      "batch_id",
+      "inspection_date",
+      "plant",
+      "line",
+      "product_family",
+      "shift",
+      "units_checked",
+      "defect_count",
+      "defect_type",
+      "downtime_minutes"
+    ],
+    "date_column": "inspection_date",
+    "dimensions": [
+      "plant",
+      "line",
+      "product_family",
+      "shift"
+    ],
+    "metrics": [
+      "units_checked",
+      "defect_count",
+      "downtime_minutes"
+    ],
+    "quality_issues": [
+      "defect clusters",
+      "shift effects",
+      "downtime spikes"
+    ],
+    "business_questions": [
+      "缺陷率最高的产线在哪里",
+      "停机时间是否解释缺陷率上升",
+      "夜班质量是否明显更差"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "supply_chain_shipments",
+    "file_name": "supply_chain_shipments.csv",
+    "relative_path": "data/supply_chain_shipments.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/supply_chain_shipments.csv",
+    "domain": "supply_chain",
+    "description": "shipment timeliness, cost, and damage claims",
+    "row_count": 600,
+    "columns": [
+      "shipment_id",
+      "ship_date",
+      "origin",
+      "destination_region",
+      "carrier",
+      "promised_days",
+      "actual_days",
+      "weight_kg",
+      "shipping_cost",
+      "late_flag",
+      "damage_claim"
+    ],
+    "date_column": "ship_date",
+    "dimensions": [
+      "origin",
+      "destination_region",
+      "carrier"
+    ],
+    "metrics": [
+      "actual_days",
+      "shipping_cost",
+      "weight_kg",
+      "damage_claim"
+    ],
+    "quality_issues": [
+      "late deliveries",
+      "carrier cost variance",
+      "damage claims"
+    ],
+    "business_questions": [
+      "哪个承运商的延误率最高",
+      "运输成本是否被重量或区域驱动",
+      "破损索赔是否集中在特定线路"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "finance_expense_claims",
+    "file_name": "finance_expense_claims.csv",
+    "relative_path": "data/finance_expense_claims.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/finance_expense_claims.csv",
+    "domain": "finance",
+    "description": "employee expense claims and policy compliance",
+    "row_count": 560,
+    "columns": [
+      "claim_id",
+      "submitted_date",
+      "department",
+      "employee_level",
+      "category",
+      "amount",
+      "policy_violation",
+      "reimbursed_days",
+      "vendor"
+    ],
+    "date_column": "submitted_date",
+    "dimensions": [
+      "department",
+      "employee_level",
+      "category"
+    ],
+    "metrics": [
+      "amount",
+      "reimbursed_days",
+      "policy_violation"
+    ],
+    "quality_issues": [
+      "policy violations",
+      "amount outliers",
+      "approval delays"
+    ],
+    "business_questions": [
+      "哪些费用类别最容易违规",
+      "报销周期是否因部门不同而变慢",
+      "异常大额费用来自哪些层级"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "accounts_receivable_aging",
+    "file_name": "accounts_receivable_aging.csv",
+    "relative_path": "data/accounts_receivable_aging.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/accounts_receivable_aging.csv",
+    "domain": "finance",
+    "description": "accounts receivable aging and dispute risk",
+    "row_count": 520,
+    "columns": [
+      "invoice_id",
+      "invoice_date",
+      "customer_segment",
+      "region",
+      "invoice_amount",
+      "days_past_due",
+      "payment_status",
+      "collector",
+      "dispute_flag"
+    ],
+    "date_column": "invoice_date",
+    "dimensions": [
+      "customer_segment",
+      "region",
+      "collector"
+    ],
+    "metrics": [
+      "invoice_amount",
+      "days_past_due",
+      "dispute_flag"
+    ],
+    "quality_issues": [
+      "overdue invoices",
+      "disputes",
+      "collector variance"
+    ],
+    "business_questions": [
+      "逾期金额主要集中在哪些客户分层",
+      "争议发票是否导致回款周期拉长",
+      "哪个催收负责人风险敞口最高"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "hr_recruiting_pipeline",
+    "file_name": "hr_recruiting_pipeline.csv",
+    "relative_path": "data/hr_recruiting_pipeline.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/hr_recruiting_pipeline.csv",
+    "domain": "hr",
+    "description": "recruiting funnel throughput and offer acceptance",
+    "row_count": 500,
+    "columns": [
+      "candidate_id",
+      "applied_date",
+      "role_family",
+      "source",
+      "stage",
+      "days_in_stage",
+      "interview_score",
+      "offer_extended",
+      "offer_accepted",
+      "salary_expectation"
+    ],
+    "date_column": "applied_date",
+    "dimensions": [
+      "role_family",
+      "source",
+      "stage"
+    ],
+    "metrics": [
+      "days_in_stage",
+      "interview_score",
+      "salary_expectation",
+      "offer_accepted"
+    ],
+    "quality_issues": [
+      "stage bottlenecks",
+      "source quality",
+      "offer dropoff"
+    ],
+    "business_questions": [
+      "招聘漏斗瓶颈在哪个阶段",
+      "哪些渠道候选人质量最高",
+      "薪资期望是否影响 offer 接受率"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "employee_attrition_pulse",
+    "file_name": "employee_attrition_pulse.csv",
+    "relative_path": "data/employee_attrition_pulse.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/employee_attrition_pulse.csv",
+    "domain": "hr",
+    "description": "employee engagement pulse and attrition risk",
+    "row_count": 620,
+    "columns": [
+      "employee_id",
+      "survey_month",
+      "department",
+      "tenure_months",
+      "manager_rating",
+      "engagement_score",
+      "overtime_hours",
+      "remote_days",
+      "attrition_risk",
+      "left_company"
+    ],
+    "date_column": "survey_month",
+    "dimensions": [
+      "department",
+      "manager_rating",
+      "remote_days"
+    ],
+    "metrics": [
+      "engagement_score",
+      "overtime_hours",
+      "attrition_risk",
+      "left_company"
+    ],
+    "quality_issues": [
+      "attrition flags",
+      "engagement missingness",
+      "overtime outliers"
+    ],
+    "business_questions": [
+      "离职风险是否由加班和敬业度解释",
+      "哪个部门的敬业度下滑最快",
+      "远程天数和留存是否存在关系"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "product_usage_events",
+    "file_name": "product_usage_events.csv",
+    "relative_path": "data/product_usage_events.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/product_usage_events.csv",
+    "domain": "product",
+    "description": "B2B product feature usage and conversion",
+    "row_count": 750,
+    "columns": [
+      "event_id",
+      "event_date",
+      "account_id",
+      "plan",
+      "feature",
+      "cohort_month",
+      "events",
+      "active_minutes",
+      "errors",
+      "converted"
+    ],
+    "date_column": "event_date",
+    "dimensions": [
+      "plan",
+      "feature",
+      "cohort_month"
+    ],
+    "metrics": [
+      "events",
+      "active_minutes",
+      "errors",
+      "converted"
+    ],
+    "quality_issues": [
+      "feature adoption skew",
+      "error spikes",
+      "cohort effects"
+    ],
+    "business_questions": [
+      "哪些功能使用后更可能转化",
+      "错误数是否压低活跃时长",
+      "新老 cohort 的功能采用是否不同"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "mobile_app_ab_test",
+    "file_name": "mobile_app_ab_test.csv",
+    "relative_path": "data/mobile_app_ab_test.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+    "domain": "product",
+    "description": "mobile app A/B experiment outcomes",
+    "row_count": 700,
+    "columns": [
+      "user_id",
+      "assign_date",
+      "variant",
+      "country",
+      "device",
+      "sessions",
+      "purchase_count",
+      "revenue",
+      "retention_d7",
+      "crash_count"
+    ],
+    "date_column": "assign_date",
+    "dimensions": [
+      "variant",
+      "country",
+      "device"
+    ],
+    "metrics": [
+      "sessions",
+      "purchase_count",
+      "revenue",
+      "retention_d7"
+    ],
+    "quality_issues": [
+      "variant imbalance",
+      "crash outliers",
+      "country mix effects"
+    ],
+    "business_questions": [
+      "实验组是否提高 D7 留存",
+      "收入提升是否只来自少数国家",
+      "崩溃次数是否影响购买"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "warehouse_inventory_movements",
+    "file_name": "warehouse_inventory_movements.csv",
+    "relative_path": "data/warehouse_inventory_movements.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/warehouse_inventory_movements.csv",
+    "domain": "operations",
+    "description": "warehouse inventory movement and stockout risk",
+    "row_count": 650,
+    "columns": [
+      "movement_id",
+      "date",
+      "warehouse",
+      "sku_category",
+      "movement_type",
+      "quantity",
+      "unit_cost",
+      "stockout_flag",
+      "shrinkage_flag"
+    ],
+    "date_column": "date",
+    "dimensions": [
+      "warehouse",
+      "sku_category",
+      "movement_type"
+    ],
+    "metrics": [
+      "quantity",
+      "unit_cost",
+      "stockout_flag",
+      "shrinkage_flag"
+    ],
+    "quality_issues": [
+      "stockouts",
+      "shrinkage",
+      "movement imbalance"
+    ],
+    "business_questions": [
+      "哪些仓库缺货风险最高",
+      "库存损耗是否集中在某类 SKU",
+      "出入库结构是否造成库存压力"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "energy_consumption_sites",
+    "file_name": "energy_consumption_sites.csv",
+    "relative_path": "data/energy_consumption_sites.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/energy_consumption_sites.csv",
+    "domain": "operations",
+    "description": "building energy consumption and peak demand",
+    "row_count": 600,
+    "columns": [
+      "site_id",
+      "reading_date",
+      "region",
+      "building_type",
+      "kwh",
+      "occupancy",
+      "temperature_c",
+      "peak_demand_kw",
+      "maintenance_flag"
+    ],
+    "date_column": "reading_date",
+    "dimensions": [
+      "region",
+      "building_type",
+      "site_id"
+    ],
+    "metrics": [
+      "kwh",
+      "occupancy",
+      "temperature_c",
+      "peak_demand_kw"
+    ],
+    "quality_issues": [
+      "temperature effects",
+      "maintenance days",
+      "peak anomalies"
+    ],
+    "business_questions": [
+      "能耗异常是否由温度或入住率解释",
+      "哪些建筑类型单位能耗最高",
+      "维护日是否降低峰值负载"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "banking_transactions_risk",
+    "file_name": "banking_transactions_risk.csv",
+    "relative_path": "data/banking_transactions_risk.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/banking_transactions_risk.csv",
+    "domain": "risk",
+    "description": "banking transaction risk and fraud signals",
+    "row_count": 760,
+    "columns": [
+      "transaction_id",
+      "transaction_date",
+      "customer_segment",
+      "channel",
+      "transaction_amount",
+      "merchant_category",
+      "risk_score",
+      "fraud_flag",
+      "chargeback_flag"
+    ],
+    "date_column": "transaction_date",
+    "dimensions": [
+      "customer_segment",
+      "channel",
+      "merchant_category"
+    ],
+    "metrics": [
+      "transaction_amount",
+      "risk_score",
+      "fraud_flag",
+      "chargeback_flag"
+    ],
+    "quality_issues": [
+      "fraud labels",
+      "amount outliers",
+      "channel risk"
+    ],
+    "business_questions": [
+      "高风险交易集中在哪些渠道",
+      "交易金额和欺诈概率是否相关",
+      "哪些商户类别的拒付率最高"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "insurance_claims",
+    "file_name": "insurance_claims.csv",
+    "relative_path": "data/insurance_claims.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/insurance_claims.csv",
+    "domain": "insurance",
+    "description": "insurance claims severity and closure performance",
+    "row_count": 560,
+    "columns": [
+      "claim_id",
+      "claim_date",
+      "policy_type",
+      "region",
+      "claim_amount",
+      "approved_amount",
+      "days_to_close",
+      "adjuster",
+      "suspected_fraud",
+      "customer_satisfaction"
+    ],
+    "date_column": "claim_date",
+    "dimensions": [
+      "policy_type",
+      "region",
+      "adjuster"
+    ],
+    "metrics": [
+      "claim_amount",
+      "approved_amount",
+      "days_to_close",
+      "suspected_fraud"
+    ],
+    "quality_issues": [
+      "severity outliers",
+      "fraud suspicion",
+      "adjuster variance"
+    ],
+    "business_questions": [
+      "理赔金额异常集中在哪些险种",
+      "疑似欺诈是否延长结案时间",
+      "不同理赔员的批准金额比例是否异常"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "healthcare_appointments",
+    "file_name": "healthcare_appointments.csv",
+    "relative_path": "data/healthcare_appointments.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/healthcare_appointments.csv",
+    "domain": "healthcare",
+    "description": "clinic appointment access and no-show risk",
+    "row_count": 620,
+    "columns": [
+      "appointment_id",
+      "appointment_date",
+      "clinic",
+      "specialty",
+      "wait_days",
+      "no_show",
+      "appointment_duration_min",
+      "patient_age_band",
+      "payer_type",
+      "followup_required"
+    ],
+    "date_column": "appointment_date",
+    "dimensions": [
+      "clinic",
+      "specialty",
+      "payer_type"
+    ],
+    "metrics": [
+      "wait_days",
+      "no_show",
+      "appointment_duration_min",
+      "followup_required"
+    ],
+    "quality_issues": [
+      "no-shows",
+      "wait time skew",
+      "clinic mix"
+    ],
+    "business_questions": [
+      "等待天数是否提高爽约率",
+      "哪些专科的随访需求最高",
+      "不同诊所的就诊效率是否不同"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "education_course_engagement",
+    "file_name": "education_course_engagement.csv",
+    "relative_path": "data/education_course_engagement.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/education_course_engagement.csv",
+    "domain": "education",
+    "description": "online course engagement and completion",
+    "row_count": 620,
+    "columns": [
+      "learner_id",
+      "week_start",
+      "course",
+      "cohort",
+      "lessons_completed",
+      "quiz_score",
+      "watch_minutes",
+      "forum_posts",
+      "certificate_earned",
+      "churn_risk"
+    ],
+    "date_column": "week_start",
+    "dimensions": [
+      "course",
+      "cohort"
+    ],
+    "metrics": [
+      "lessons_completed",
+      "quiz_score",
+      "watch_minutes",
+      "certificate_earned"
+    ],
+    "quality_issues": [
+      "dropoff risk",
+      "quiz missingness",
+      "engagement outliers"
+    ],
+    "business_questions": [
+      "学习投入是否预测证书完成",
+      "哪些课程的流失风险最高",
+      "测验成绩和观看时长是否一致"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "real_estate_leads",
+    "file_name": "real_estate_leads.csv",
+    "relative_path": "data/real_estate_leads.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/real_estate_leads.csv",
+    "domain": "sales",
+    "description": "real estate lead conversion and sales cycle",
+    "row_count": 540,
+    "columns": [
+      "lead_id",
+      "created_date",
+      "city",
+      "channel",
+      "property_type",
+      "budget",
+      "visits_scheduled",
+      "offer_made",
+      "closed_won",
+      "days_to_close"
+    ],
+    "date_column": "created_date",
+    "dimensions": [
+      "city",
+      "channel",
+      "property_type"
+    ],
+    "metrics": [
+      "budget",
+      "visits_scheduled",
+      "offer_made",
+      "closed_won"
+    ],
+    "quality_issues": [
+      "channel quality",
+      "budget outliers",
+      "long sales cycles"
+    ],
+    "business_questions": [
+      "哪些渠道带来的成交率最高",
+      "预算是否影响看房和出价",
+      "城市间销售周期差异在哪里"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  },
+  {
+    "dataset_id": "restaurant_operations",
+    "file_name": "restaurant_operations.csv",
+    "relative_path": "data/restaurant_operations.csv",
+    "agent_relative_path": "examples/training_data/week1_seed_assets/data/restaurant_operations.csv",
+    "domain": "hospitality",
+    "description": "restaurant order operations and guest experience",
+    "row_count": 700,
+    "columns": [
+      "order_id",
+      "order_date",
+      "store",
+      "daypart",
+      "channel",
+      "items",
+      "ticket_size",
+      "prep_minutes",
+      "refund_flag",
+      "rating",
+      "labor_hours"
+    ],
+    "date_column": "order_date",
+    "dimensions": [
+      "store",
+      "daypart",
+      "channel"
+    ],
+    "metrics": [
+      "ticket_size",
+      "prep_minutes",
+      "rating",
+      "labor_hours"
+    ],
+    "quality_issues": [
+      "refunds",
+      "prep time spikes",
+      "rating missingness"
+    ],
+    "business_questions": [
+      "备餐时间是否影响评分",
+      "哪些门店的退款率最高",
+      "不同时段的客单价和人效差异如何"
+    ],
+    "synthetic": true,
+    "contains_personal_data": false
+  }
+]

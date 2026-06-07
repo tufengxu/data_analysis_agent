@@ -1,0 +1,120 @@
+{
+  "ok": true,
+  "datasets": 20,
+  "seed_tasks": 100,
+  "analysis_types": {
+    "business_recommendation": 20,
+    "data_quality_profile": 20,
+    "grouped_kpi": 20,
+    "risk_or_anomaly": 20,
+    "time_trend": 20
+  },
+  "tool_coverage": {
+    "nl_query": 20,
+    "python_analysis": 100,
+    "read_file": 100,
+    "visualization": 40
+  },
+  "csv_reports": [
+    {
+      "file_name": "retail_sales_orders.csv",
+      "rows": 720,
+      "columns": 12
+    },
+    {
+      "file_name": "ecommerce_marketing_funnel.csv",
+      "rows": 540,
+      "columns": 10
+    },
+    {
+      "file_name": "subscription_saas_metrics.csv",
+      "rows": 640,
+      "columns": 11
+    },
+    {
+      "file_name": "customer_support_tickets.csv",
+      "rows": 680,
+      "columns": 10
+    },
+    {
+      "file_name": "manufacturing_quality_inspection.csv",
+      "rows": 520,
+      "columns": 10
+    },
+    {
+      "file_name": "supply_chain_shipments.csv",
+      "rows": 600,
+      "columns": 11
+    },
+    {
+      "file_name": "finance_expense_claims.csv",
+      "rows": 560,
+      "columns": 9
+    },
+    {
+      "file_name": "accounts_receivable_aging.csv",
+      "rows": 520,
+      "columns": 9
+    },
+    {
+      "file_name": "hr_recruiting_pipeline.csv",
+      "rows": 500,
+      "columns": 10
+    },
+    {
+      "file_name": "employee_attrition_pulse.csv",
+      "rows": 620,
+      "columns": 10
+    },
+    {
+      "file_name": "product_usage_events.csv",
+      "rows": 750,
+      "columns": 10
+    },
+    {
+      "file_name": "mobile_app_ab_test.csv",
+      "rows": 700,
+      "columns": 10
+    },
+    {
+      "file_name": "warehouse_inventory_movements.csv",
+      "rows": 650,
+      "columns": 9
+    },
+    {
+      "file_name": "energy_consumption_sites.csv",
+      "rows": 600,
+      "columns": 9
+    },
+    {
+      "file_name": "banking_transactions_risk.csv",
+      "rows": 760,
+      "columns": 9
+    },
+    {
+      "file_name": "insurance_claims.csv",
+      "rows": 560,
+      "columns": 10
+    },
+    {
+      "file_name": "healthcare_appointments.csv",
+      "rows": 620,
+      "columns": 10
+    },
+    {
+      "file_name": "education_course_engagement.csv",
+      "rows": 620,
+      "columns": 10
+    },
+    {
+      "file_name": "real_estate_leads.csv",
+      "rows": 540,
+      "columns": 10
+    },
+    {
+      "file_name": "restaurant_operations.csv",
+      "rows": 700,
+      "columns": 11
+    }
+  ]
+}
