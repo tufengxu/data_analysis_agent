@@ -27,11 +27,16 @@ def compact_result(
     content: str,
     max_chars: int,
     config: SamplingConfig | None = None,
+    context_pressure: float = 0.0,
 ) -> tuple[str, bool]:
-    """Compact an oversized tool result.
+    """Compact an oversized tool result with pressure-adaptive gain gating.
 
     Returns ``(content, was_compacted)``. Results at or below
-    ``config.trigger_chars`` pass through untouched.
+    ``config.trigger_chars`` pass through untouched. After summarizing, the
+    summary replaces the original only if it is short enough relative to an
+    acceptance ratio that scales with ``context_pressure`` (0=empty→strict,
+    1=near full→lenient) — unless the original exceeds ``max_chars`` (which would
+    otherwise be truncated), in which case compaction is forced.
     """
     config = config or SamplingConfig()
     if len(content) <= config.trigger_chars:
@@ -40,6 +45,16 @@ def compact_result(
         out = summarize_text(content, config)
     except Exception:
         out = _head_tail_truncate(content, config.trigger_chars)
+
+    pressure = min(1.0, max(0.0, context_pressure))
+    accept_ratio = (
+        config.gate_ratio_low_pressure
+        + (config.gate_ratio_high_pressure - config.gate_ratio_low_pressure) * pressure
+    )
+    fits_within_cap = len(content) <= max_chars
+    if len(out) > len(content) * accept_ratio and fits_within_cap:
+        return content, False  # gain too small and original fits -> keep original
+
     if max_chars and len(out) > max_chars:
         out = _head_tail_truncate(out, max_chars)
     return out, True
