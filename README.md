@@ -156,11 +156,5 @@ mypy src
 
 ## Architecture Reference
 
-This implementation is derived from detailed architecture research in `OKComputer_AgentDesign_Chat/`, covering:
-
-- Claude Code AgentLoop state machine and 9-step pipeline
-- Anthropic Messages API protocol and ContentBlock system
-- StreamingToolExecutor and concurrent execution model
-- Deny-first permission gates and 7-layer security
-- Context compression strategies (5-level pipeline)
-- Skill system and task planning
+See `docs/ARCHITECTURE.md` for the module map (machine-checked manifest), subsystem
+invariants, and dependency rules. Design specs live under `docs/superpowers/specs/`.
