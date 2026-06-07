@@ -59,10 +59,16 @@ def module_dotted_name(repo_rel_path: str) -> str:
     return ".".join(parts)
 
 
-def extract_imports(source: str, module_dotted: str) -> set[str]:
-    """Absolute dotted names imported by source (relative imports resolved)."""
+def extract_imports(source: str, module_dotted: str, *, is_init: bool = False) -> set[str]:
+    """Absolute dotted names imported by source (relative imports resolved).
+
+    For an ``__init__.py`` pass ``is_init=True``: the module dotted name IS the
+    package, so relative imports resolve against it rather than its parent.
+    Raises ``SyntaxError`` if source does not parse (callers decide how to report).
+    """
     tree = ast.parse(source)
-    package_parts = module_dotted.split(".")[:-1]  # the module's package
+    parts = module_dotted.split(".")
+    package_parts = parts if is_init else parts[:-1]  # the module's package
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -70,8 +76,9 @@ def extract_imports(source: str, module_dotted: str) -> set[str]:
                 found.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.level:
-                base = package_parts[: len(package_parts) - (node.level - 1)]
-                prefix = base + ([node.module] if node.module else [])
+                # level 1 = current package; clamp at the package root (no wrap)
+                idx = max(0, len(package_parts) - (node.level - 1))
+                prefix = package_parts[:idx] + ([node.module] if node.module else [])
             else:
                 prefix = [node.module] if node.module else []
             base_dotted = ".".join(prefix)
@@ -95,12 +102,18 @@ def check_import_rules(
     for path in src_root.rglob("*.py"):
         rel = path.relative_to(repo_root).as_posix()
         dotted = module_dotted_name(rel)
-        imports = extract_imports(path.read_text(encoding="utf-8"), dotted)
+        try:
+            imports = extract_imports(
+                path.read_text(encoding="utf-8"), dotted, is_init=path.name == "__init__.py"
+            )
+        except SyntaxError as exc:
+            errors.append(f"syntax-error: {rel}: {exc}")
+            continue
         for rule in rules:
-            who = str(rule["who"])
-            if not _matches(who, dotted):
+            who = str(rule.get("who", ""))
+            if not who or not _matches(who, dotted):
                 continue
-            for target in (str(t) for t in rule["forbid"]):  # type: ignore[union-attr]
+            for target in (str(t) for t in rule.get("forbid", []) or []):
                 for imp in imports:
                     if _forbidden(target, imp):
                         errors.append(f"import-rule: {rel} 不得 import {imp} (规则 who={who})")
@@ -108,6 +121,9 @@ def check_import_rules(
 
 
 _PATH_TOKEN = re.compile(r"`([^`]+)`|\]\(([^)]+)\)")
+# Known repo file extensions — avoids flagging dotted API names (os.path) or
+# version strings (v1.2.3) as paths, which would be false dead-links.
+_FILE_EXT = re.compile(r"\.(py|md|txt|toml|yaml|yml|json|jsonl|cfg|ini|sh|rst|lock|cff)$")
 
 
 def find_repo_paths(markdown: str) -> list[str]:
@@ -117,7 +133,7 @@ def find_repo_paths(markdown: str) -> list[str]:
         token = (m.group(1) or m.group(2) or "").strip()
         if not token or token.startswith(("http://", "https://", "#", "mailto:")):
             continue
-        looks_like_path = "/" in token or re.search(r"\.\w{1,5}$", token)
+        looks_like_path = "/" in token or bool(_FILE_EXT.search(token))
         if looks_like_path and " " not in token.strip("/"):
             out.append(token.rstrip("/"))
     return out
@@ -126,7 +142,8 @@ def find_repo_paths(markdown: str) -> list[str]:
 def check_dead_links(markdown: str, repo_root: Path) -> list[str]:
     errors: list[str] = []
     for token in find_repo_paths(markdown):
-        if (repo_root / token).exists():
+        canonical = token.lstrip("/")  # treat absolute-looking tokens as repo-relative
+        if (repo_root / canonical).exists():
             continue
         errors.append(f"dead-link: 引用的路径不存在: {token}")
     return errors

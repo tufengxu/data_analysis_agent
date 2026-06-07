@@ -93,3 +93,47 @@ def test_check_file_sizes_warns_over_limit(tmp_path):
     big.write_text("\n".join(f"x{i} = {i}" for i in range(20)))
     warns = checks.check_file_sizes(tmp_path / "src", tmp_path, limit=10)
     assert any("big.py" in w for w in warns)
+
+
+# --- regression tests for hardening (code review of dbfd264) --------------- #
+def test_extract_imports_overdeep_relative_does_not_fabricate():
+    # A relative import deeper than the package must not wrap to a fabricated prefix.
+    imports = checks.extract_imports("from .... import x", "a.b.c")
+    assert imports == {"x"}
+
+
+def test_extract_imports_init_resolves_against_package():
+    # For an __init__.py the module dotted name IS the package, not a leaf module.
+    imports = checks.extract_imports(
+        "from . import render", "data_analysis_agent.sampling", is_init=True
+    )
+    assert "data_analysis_agent.sampling.render" in imports
+
+
+def test_find_repo_paths_excludes_dotted_api_and_versions():
+    md = "use `os.path` and `numpy.array` and version `v1.2.3` but `real/file.py` is a path"
+    candidates = checks.find_repo_paths(md)
+    assert "real/file.py" in candidates
+    assert "os.path" not in candidates
+    assert "numpy.array" not in candidates
+    assert "v1.2.3" not in candidates
+
+
+def test_check_dead_links_handles_absolute_token(tmp_path):
+    (tmp_path / "real2.py").write_text("x = 1")
+    dead = checks.check_dead_links("see `/real2.py` and `/ghost.py`", tmp_path)
+    joined = "\n".join(dead)
+    assert "/real2.py" not in joined  # exists relative to repo -> not dead
+    assert "/ghost.py" in joined  # missing -> dead
+
+
+def test_check_import_rules_survives_syntax_error(tmp_path):
+    base = tmp_path / "src" / "data_analysis_agent" / "pkg"
+    base.mkdir(parents=True)
+    (base / "broken.py").write_text("def (:\n")  # invalid syntax
+    (base / "good.py").write_text("from ..tools import x\n")
+    rules = [{"who": "data_analysis_agent.pkg", "forbid": ["data_analysis_agent.tools"]}]
+    errors = checks.check_import_rules(tmp_path / "src", tmp_path, rules)
+    joined = "\n".join(errors)
+    assert "good.py" in joined  # sibling still checked despite the broken file
+    assert "broken.py" in joined  # syntax error surfaced, not crashed
