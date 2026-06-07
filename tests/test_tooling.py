@@ -127,6 +127,23 @@ def test_check_dead_links_handles_absolute_token(tmp_path):
     assert "/ghost.py" in joined  # missing -> dead
 
 
+def test_find_repo_paths_excludes_glob_tokens():
+    cands = checks.find_repo_paths("rule `sampling/*` and `tools/*` but `docs/x.md` is real")
+    assert "docs/x.md" in cands
+    assert "sampling/*" not in cands
+    assert "tools/*" not in cands
+
+
+def test_check_dead_links_resolves_shorthand_via_suffix(tmp_path):
+    deep = tmp_path / "src" / "data_analysis_agent" / "tools"
+    deep.mkdir(parents=True)
+    (deep / "base.py").write_text("x = 1")
+    dead = checks.check_dead_links("see `tools/base.py` and `ghost/missing.py`", tmp_path)
+    joined = "\n".join(dead)
+    assert "tools/base.py" not in joined  # resolved by path-suffix match
+    assert "ghost/missing.py" in joined
+
+
 def test_check_import_rules_survives_syntax_error(tmp_path):
     base = tmp_path / "src" / "data_analysis_agent" / "pkg"
     base.mkdir(parents=True)

@@ -7,8 +7,23 @@ Pure functions over the repo tree and docs — no side effects, no LLM. Each
 from __future__ import annotations
 
 import ast
+import os
 import re
 from pathlib import Path
+
+# Directories never scanned when resolving doc references.
+_IGNORE_DIRS = {
+    ".git",
+    ".venv",
+    ".uv-cache",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "__pycache__",
+    ".quality",
+    "node_modules",
+    "*.egg-info",
+}
 
 _MANIFEST_RE = re.compile(r"<!--\s*manifest:start\s*-->(.*?)<!--\s*manifest:end\s*-->", re.DOTALL)
 _ENTRY_RE = re.compile(r'^\s*(\S+?)\s*=\s*"(.*)"\s*$')
@@ -134,16 +149,40 @@ def find_repo_paths(markdown: str) -> list[str]:
         if not token or token.startswith(("http://", "https://", "#", "mailto:")):
             continue
         looks_like_path = "/" in token or bool(_FILE_EXT.search(token))
-        if looks_like_path and " " not in token.strip("/"):
-            out.append(token.rstrip("/"))
+        if not looks_like_path:
+            continue
+        if any(ch in token for ch in "*?<>|"):  # glob / placeholder, not a real path
+            continue
+        if " " in token.strip("/"):
+            continue
+        out.append(token.rstrip("/"))
     return out
 
 
+def _repo_files(repo_root: Path) -> set[str]:
+    """All repo-relative posix file paths, skipping venv/caches/git."""
+    files: set[str] = set()
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        dirnames[:] = [d for d in dirnames if d not in _IGNORE_DIRS]
+        for name in filenames:
+            files.add((Path(dirpath) / name).relative_to(repo_root).as_posix())
+    return files
+
+
 def check_dead_links(markdown: str, repo_root: Path) -> list[str]:
+    """Flag referenced paths that exist nowhere in the repo.
+
+    A token resolves if it exists at the repo root or is a path-suffix of any
+    tracked file (so shorthand refs like ``tools/base.py`` resolve to
+    ``src/data_analysis_agent/tools/base.py``).
+    """
+    files = _repo_files(repo_root)
     errors: list[str] = []
     for token in find_repo_paths(markdown):
         canonical = token.lstrip("/")  # treat absolute-looking tokens as repo-relative
         if (repo_root / canonical).exists():
+            continue
+        if canonical in files or any(f.endswith("/" + canonical) for f in files):
             continue
         errors.append(f"dead-link: 引用的路径不存在: {token}")
     return errors
