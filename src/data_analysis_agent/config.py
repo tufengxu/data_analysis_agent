@@ -52,6 +52,28 @@ class AgentConfig:
     sampling_trigger_chars: int = 8000
     sampling_fidelity: str = "mid"  # low | mid | high
 
+    # Result store (CCR-lite)
+    result_store_ttl_seconds: int = 3600
+    result_store_max_total_mb: int = 64
+    result_store_max_entry_mb: int = 8
+
+    def result_store(self, persist_path: str | Path | None = None) -> Any:
+        """Build a ResultStore; dir follows persist_path (else a tempdir)."""
+        import tempfile
+
+        from .sampling.result_store import ResultStore
+
+        if persist_path:
+            store_dir = Path(persist_path).expanduser().resolve().parent / "results"
+        else:
+            store_dir = Path(tempfile.mkdtemp(prefix="daa_results_"))
+        return ResultStore(
+            store_dir,
+            ttl_seconds=self.result_store_ttl_seconds,
+            max_total_bytes=self.result_store_max_total_mb * 1024 * 1024,
+            max_entry_bytes=self.result_store_max_entry_mb * 1024 * 1024,
+        )
+
     def sampling_config(self) -> Any:
         """Build a SamplingConfig from the fidelity preset + trigger override."""
         from .sampling import SamplingConfig
