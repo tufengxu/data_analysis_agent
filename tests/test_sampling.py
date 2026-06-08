@@ -260,3 +260,37 @@ async def test_python_exec_large_result_summarized():
     assert result.is_error is False
     assert "采样摘要" in result.content
     assert "method=stratified" in result.content or "method=reservoir" in result.content
+
+
+# --------------------------------------------------------------------------- #
+# Pressure-adaptive compression-gain gating
+# --------------------------------------------------------------------------- #
+def test_gating_passthrough_low_gain_low_pressure():
+    # A result just over trigger whose digest is not <=65% of original -> passthrough.
+    config = SamplingConfig(trigger_chars=50)
+    content = "uniquelinexyz" * 8  # 104 chars, no newlines/structure -> weak digest
+    out, was = compact_result(content, max_chars=50_000, config=config, context_pressure=0.0)
+    assert was is False
+    assert out == content
+
+
+def test_gating_compresses_under_high_pressure():
+    config = SamplingConfig(trigger_chars=50)
+    content = "\n".join(f"k{i}=v{i}" for i in range(40))
+    _out_low, was_low = compact_result(content, 50_000, config, context_pressure=0.0)
+    _out_high, was_high = compact_result(content, 50_000, config, context_pressure=1.0)
+    # high pressure is at least as willing to compress as low pressure
+    assert was_high or (was_low == was_high)
+
+
+def test_gating_forces_compression_over_max_chars():
+    config = SamplingConfig(trigger_chars=50)
+    content = "x" * 5000  # one line, no structure
+    out, was = compact_result(content, max_chars=1000, config=config, context_pressure=0.0)
+    assert was is True
+    assert len(out) <= 1000
+
+
+def test_compact_result_default_pressure_is_zero():
+    out, was = compact_result("small", max_chars=50_000)
+    assert (out, was) == ("small", False)

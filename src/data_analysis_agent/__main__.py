@@ -91,14 +91,17 @@ class _ShutdownManager:
 _shutdown_manager = _ShutdownManager()
 
 
-def build_registry(config: AgentConfig | None = None) -> ToolRegistry:
+def build_registry(config: AgentConfig | None = None, result_store: Any = None) -> ToolRegistry:
     """Build and configure the tool registry with built-in tools."""
+    from .tools.retrieve_result import RetrieveResultTool
+
     registry = ToolRegistry()
     sampling_config = config.sampling_config() if config else None
     registry.register(FileReadTool())
     registry.register(PythonAnalysisTool(sampling_config=sampling_config))
     registry.register(NlQueryTool())
     registry.register(VisualizationTool())
+    registry.register(RetrieveResultTool(result_store=result_store))
 
     if config:
         for pattern in config.deny_patterns:
@@ -171,7 +174,8 @@ async def run_agent(
         model=config.model,
         api_key=config.api_key,
     )
-    registry = build_registry(config)
+    result_store = config.result_store(persist_path)
+    registry = build_registry(config, result_store=result_store)
     skill_registry = build_skill_registry()
     compressor = ContextCompressor(
         budget_tokens=config.context_budget_tokens,
@@ -189,6 +193,7 @@ async def run_agent(
         skill_registry=skill_registry,
         permission_engine=permission_engine,
         sampling_config=config.sampling_config(),
+        result_store=result_store,
     )
 
     accumulated_text = ""

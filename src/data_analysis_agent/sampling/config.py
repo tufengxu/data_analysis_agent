@@ -42,6 +42,12 @@ class SamplingConfig:
     max_outlier_rows: int = 5
     seed: int = 0
     trigger_rows: int = 50
+    # Compression-gain gating (pressure-adaptive): a summary replaces the
+    # original only if it is shorter than original * accept_ratio, where
+    # accept_ratio interpolates from low_pressure (context empty → strict) to
+    # high_pressure (context near full → lenient) by context_pressure.
+    gate_ratio_low_pressure: float = 0.65
+    gate_ratio_high_pressure: float = 0.90
 
     @classmethod
     def for_fidelity(cls, level: str) -> SamplingConfig:

@@ -21,7 +21,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
-from .context.compression import ContextCompressor
+from .context.compression import ContextCompressor, estimate_tokens, message_to_text
 from .events import (
     AgentEvent,
     CompleteEvent,
@@ -42,6 +42,7 @@ from .protocol.messages import (
     ToolUseBlock,
 )
 from .sampling import SamplingConfig, compact_result
+from .sampling.result_store import ResultStore
 from .security.permissions import PermissionBehavior, PermissionEngine
 from .skills.base import Skill
 from .skills.registry import SkillRegistry
@@ -98,11 +99,13 @@ class AgentLoop:
         permission_engine: PermissionEngine | None = None,
         client: AnthropicApiClient | None = None,
         sampling_config: SamplingConfig | None = None,
+        result_store: ResultStore | None = None,
     ):
         self.config = config
         self.registry = registry
         self.compressor = compressor or ContextCompressor()
         self.sampling_config = sampling_config or SamplingConfig()
+        self.result_store = result_store
         self.store = store
         self.skill_registry = skill_registry
         self.permission_engine = permission_engine
@@ -355,6 +358,12 @@ class AgentLoop:
 
         return base if base else None
 
+    def _context_pressure(self, messages: list[Message]) -> float:
+        """Fraction of the token budget currently used (clamped to [0, 1])."""
+        budget = self.compressor.budget_tokens or 1
+        total = sum(estimate_tokens(message_to_text(m)) for m in messages)
+        return min(1.0, max(0.0, total / budget))
+
     async def _execute_tools(
         self,
         tool_use_blocks: list[ToolUseBlock],
@@ -440,11 +449,22 @@ class AgentLoop:
             # Execute
             try:
                 tool_result: ToolResult = await tool.call(block.input)
-                content, _ = compact_result(
+                pressure = self._context_pressure(state.messages)
+                content, was_compacted = compact_result(
                     tool_result.content,
                     tool.max_result_size_chars,
                     self.sampling_config,
+                    pressure,
                 )
+                if was_compacted and self.result_store is not None:
+                    stored = self.result_store.put(
+                        block.id, tool_result.content, {"tool": block.name}
+                    )
+                    if stored:
+                        content += (
+                            "\n\n[完整结果已缓存。回取: retrieve_result("
+                            f'result_id="{block.id}", offset=0, limit=50)]'
+                        )
                 results.append(
                     ToolResultBlock(
                         tool_use_id=block.id,
