@@ -39,6 +39,7 @@ src/data_analysis_agent/tools/file_read.py = "按 offset/limit 读文件"
 src/data_analysis_agent/tools/python_exec.py = "受限子进程执行 + 采样摘要注入"
 src/data_analysis_agent/tools/nl_query.py = "自然语言 → pandas/SQL 代码生成"
 src/data_analysis_agent/tools/visualization.py = "matplotlib/seaborn/plotly 图表生成"
+src/data_analysis_agent/tools/retrieve_result.py = "retrieve_result 工具:按行分页回取被摘要前的原始工具结果"
 src/data_analysis_agent/skills/base.py = "Skill 抽象基类"
 src/data_analysis_agent/skills/registry.py = "技能注册 + 关键词匹配 + 优先级路由"
 src/data_analysis_agent/skills/builtin.py = "描述性/相关性/趋势 三个内置分析技能"
@@ -48,6 +49,7 @@ src/data_analysis_agent/sampling/model.py = "ColumnSummary / TableSummary 数据
 src/data_analysis_agent/sampling/render.py = "L3 Markdown 渲染器(共享,带采样警告)"
 src/data_analysis_agent/sampling/text_summary.py = "harness 纯 stdlib 兜底摘要器"
 src/data_analysis_agent/sampling/sandbox_summary.py = "精确 DataFrame 摘要,内联进 python_exec 沙箱"
+src/data_analysis_agent/sampling/result_store.py = "持久化结果存储(CCR-lite):原文落盘 + 按行回取 + TTL/容量回收"
 ```
 
 <!-- manifest:end -->
