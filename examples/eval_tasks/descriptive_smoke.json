@@ -1,0 +1,10 @@
+{
+  "task_id": "descriptive_smoke",
+  "input": "对 fixtures/sales.csv 做描述性统计,给出各列的基本分布",
+  "dataset_fixture": "fixtures/sales.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 8
+  }
+}
