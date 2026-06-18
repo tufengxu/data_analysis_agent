@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from data_analysis_agent.agent_loop import AgentLoop, AgentLoopConfig
+from data_analysis_agent.agent_loop import AgentLoop, AgentLoopConfig, ToolExecutionRecord
 from data_analysis_agent.protocol.messages import ToolUseBlock
 from data_analysis_agent.sampling import SamplingConfig
 from data_analysis_agent.sampling.result_store import ResultStore
@@ -44,6 +44,15 @@ class _BigTool(Tool):
         return ToolResult(content="col\n" + "\n".join(f"row{i}" for i in range(2000)))
 
 
+async def _run_tools(agent, blocks, state):
+    """Collect ToolResultBlocks from the event-yielding executor."""
+    return [
+        item.result
+        async for item in agent._execute_tools(blocks, state)
+        if isinstance(item, ToolExecutionRecord)
+    ]
+
+
 def _agent(store):
     registry = ToolRegistry()
     registry.register(_BigTool())
@@ -70,7 +79,7 @@ async def test_large_result_stored_and_marked(tmp_path):
     agent = _agent(store)
     state = AgentState(messages=[Message(role="user", content="hi")])
     blocks = [ToolUseBlock(id="call_1", name="big", input={})]
-    results = await agent._execute_tools(blocks, state)
+    results = await _run_tools(agent, blocks, state)
     assert "retrieve_result" in results[0].content
     page = store.get("call_1")
     assert page is not None
@@ -96,6 +105,6 @@ async def test_small_result_not_stored(tmp_path):
         client=_DummyClient(),
     )
     state = AgentState(messages=[Message(role="user", content="hi")])
-    results = await agent._execute_tools([ToolUseBlock(id="c2", name="big", input={})], state)
+    results = await _run_tools(agent, [ToolUseBlock(id="c2", name="big", input={})], state)
     assert "retrieve_result" not in results[0].content
     assert store.get("c2") is None

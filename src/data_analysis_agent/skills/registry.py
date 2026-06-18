@@ -2,7 +2,24 @@
 
 from __future__ import annotations
 
+import re
+
 from .base import Skill
+
+# CJK has no word spaces, so str.split() leaves a whole Chinese query as one
+# un-matchable chunk. Shingling each run into overlapping 2-grams gives the
+# query-token routing path something to match (留存分析 → 留存, 存分, 分析).
+# Defined locally on purpose — see ADR 0006: the project's text matchers use
+# deliberately different tokenizers and are NOT unified behind a shared util.
+_CJK_RUN = re.compile(r"[一-鿿]+")
+
+
+def _cjk_bigrams(text: str) -> set[str]:
+    """Overlapping 2-grams of every CJK run in ``text`` (empty for pure ASCII)."""
+    grams: set[str] = set()
+    for run in _CJK_RUN.findall(text):
+        grams.update(run[i : i + 2] for i in range(len(run) - 1))
+    return grams
 
 
 class SkillRegistry:
@@ -40,7 +57,11 @@ class SkillRegistry:
     def match_best(self, query: str) -> Skill | None:
         """Simple keyword-based best match."""
         query_lower = query.lower()
-        keywords = query_lower.split()
+        terms = query_lower.split()
+        # CJK bigrams, deduped against the split terms so a 2-char run the split
+        # already produced is never double-scored. Empty for pure ASCII, which
+        # keeps Latin routing byte-identical to the prior split-only behavior.
+        cjk_terms = _cjk_bigrams(query_lower) - set(terms)
         best: Skill | None = None
         best_score = 0
 
@@ -50,7 +71,10 @@ class SkillRegistry:
             for phrase in skill.keywords:
                 if phrase.lower() in query_lower:
                     score += 3
-            for kw in keywords:
+            for kw in terms:
+                if kw in text:
+                    score += 1
+            for kw in cjk_terms:
                 if kw in text:
                     score += 1
             if score > best_score:

@@ -12,6 +12,7 @@ from data_analysis_agent.events import (
 )
 from data_analysis_agent.persistence import MessageStore
 from data_analysis_agent.protocol.messages import ModelResponse, TextBlock, ToolUseBlock
+from data_analysis_agent.recovery import RecoveryPolicy
 from data_analysis_agent.security.permissions import (
     PermissionBehavior,
     PermissionEngine,
@@ -233,7 +234,7 @@ async def test_agent_loop_max_tokens_recovery_injects_continuation_message():
 
     assert any(isinstance(event, CompleteEvent) for event in events)
     assert len(client.calls) == 2
-    assert client.calls[1]["max_tokens"] == AgentLoop.RECOVERY_MAX_TOKENS
+    assert client.calls[1]["max_tokens"] == RecoveryPolicy.RECOVERY_MAX_TOKENS
     assert client.calls[1]["messages"][-1]["role"] == "user"
     assert "continue" in client.calls[1]["messages"][-1]["content"].lower()
 

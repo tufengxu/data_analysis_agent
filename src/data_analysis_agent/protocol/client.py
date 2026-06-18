@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 from collections.abc import AsyncIterator
 from typing import Any, cast
@@ -166,6 +167,7 @@ class AnthropicApiClient:
         content_blocks: list[ContentBlock] = []
         stop_reason: str | None = None
         model_id = self.model
+        usage: dict[str, int] = {}
 
         try:
             async with self._client.messages.stream(**params) as stream:
@@ -212,9 +214,24 @@ class AnthropicApiClient:
                             content_blocks.append(TextBlock(text=current_text))
                             current_text = ""
 
+                    elif event_type == "message_start":
+                        # Streaming usage: input tokens arrive at message_start,
+                        # output tokens accumulate on message_delta. The int guard
+                        # avoids writing a non-int (a future SDK shape change) that
+                        # would masquerade as real usage and bypass the estimate
+                        # fallback; a missing attr degrades to estimate, not crash.
+                        with contextlib.suppress(AttributeError):
+                            value = event.message.usage.input_tokens
+                            if isinstance(value, int):
+                                usage["input_tokens"] = value
+
                     elif event_type == "message_delta":
                         if event.delta.stop_reason:
                             stop_reason = event.delta.stop_reason
+                        with contextlib.suppress(AttributeError):
+                            value = event.usage.output_tokens
+                            if isinstance(value, int):
+                                usage["output_tokens"] = value
 
                     elif event_type == "message_stop":
                         pass
@@ -241,4 +258,5 @@ class AnthropicApiClient:
             content=content_blocks,
             stop_reason=stop_reason,
             model=model_id,
+            usage=usage,
         )

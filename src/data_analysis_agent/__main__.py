@@ -16,31 +16,27 @@ from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from .agent_loop import AgentLoop, AgentLoopConfig
 from .config import AgentConfig
-from .context.compression import ContextCompressor
 from .events import (
     CompleteEvent,
     ErrorEvent,
     RequestStartEvent,
+    StateChangeEvent,
     StreamTextEvent,
     ToolResultEvent,
     ToolUseEvent,
 )
-from .persistence import MessageStore
-from .security.permissions import (
-    PermissionBehavior,
-    PermissionEngine,
-    PermissionMode,
-    PermissionRule,
+
+# Assembly lives in the composition root; re-exported here so existing callers
+# (and tests) importing them from __main__ keep working.
+from .runtime import (  # noqa: F401
+    AgentRuntime,
+    build_message_store,
+    build_permission_engine,
+    build_registry,
+    build_skill_registry,
 )
-from .skills.builtin import (
-    CorrelationAnalysisSkill,
-    DescriptiveAnalysisSkill,
-    TrendAnalysisSkill,
-)
-from .skills.registry import SkillRegistry
-from .tools import FileReadTool, NlQueryTool, PythonAnalysisTool, ToolRegistry, VisualizationTool
+from .telemetry import parse_explicit_feedback
 
 console = Console()
 
@@ -62,7 +58,7 @@ class _ShutdownManager:
         self._original_sigterm: Any = None
 
     def install(self) -> None:
-        """Install signal handlers."""
+        """Install signal handlers (must be called inside a running loop)."""
         try:
             asyncio.get_running_loop()
             self._original_sigint = signal.signal(signal.SIGINT, self._handle_signal)
@@ -91,169 +87,198 @@ class _ShutdownManager:
 _shutdown_manager = _ShutdownManager()
 
 
-def build_registry(config: AgentConfig | None = None, result_store: Any = None) -> ToolRegistry:
-    """Build and configure the tool registry with built-in tools."""
-    from .tools.retrieve_result import RetrieveResultTool
+class ConsoleApprovalHandler:
+    """Interactive y/N gate for ASK permission decisions.
 
-    registry = ToolRegistry()
-    sampling_config = config.sampling_config() if config else None
-    registry.register(FileReadTool())
-    registry.register(PythonAnalysisTool(sampling_config=sampling_config))
-    registry.register(NlQueryTool())
-    registry.register(VisualizationTool())
-    registry.register(RetrieveResultTool(result_store=result_store))
-
-    if config:
-        for pattern in config.deny_patterns:
-            registry.add_deny_pattern(pattern)
-        if config.permission_mode == "plan":
-            registry.add_deny_pattern("python_analysis")
-            registry.add_deny_pattern("visualization")
-
-    return registry
-
-
-def build_skill_registry() -> SkillRegistry:
-    """Build and configure the skill registry."""
-    skills = SkillRegistry()
-    skills.register(DescriptiveAnalysisSkill())
-    skills.register(CorrelationAnalysisSkill())
-    skills.register(TrendAnalysisSkill())
-    return skills
-
-
-def build_message_store(persist_path: str | Path | None) -> MessageStore | None:
-    """Build a message store when persistence is requested."""
-    return MessageStore(persist_path) if persist_path else None
-
-
-def build_permission_engine(config: AgentConfig) -> PermissionEngine | None:
-    """Build permission rules from runtime configuration.
-
-    Default mode without deny rules preserves the existing non-interactive CLI
-    behavior. Once permission config is present, the engine is fail-closed for
-    explicit asks and deny-first for matching deny patterns.
+    Pauses the active rich Live display (if any) so the prompt is readable,
+    then resumes it.
     """
-    mode_map = {
-        "default": PermissionMode.DEFAULT,
-        "plan": PermissionMode.PLAN,
-        "auto": PermissionMode.AUTO,
-        "bypass": PermissionMode.BYPASS,
-    }
-    mode = mode_map.get(config.permission_mode, PermissionMode.DEFAULT)
 
-    if mode == PermissionMode.DEFAULT and not config.deny_patterns:
-        return None
+    def __init__(self, console: Console) -> None:
+        self.console = console
+        self.live: Live | None = None
 
-    engine = PermissionEngine(mode=mode)
-    for pattern in config.deny_patterns:
-        engine.add_rule(PermissionRule(pattern, PermissionBehavior.DENY))
-
-    if mode == PermissionMode.PLAN:
-        engine.add_rule(PermissionRule("python_analysis", PermissionBehavior.DENY))
-        engine.add_rule(PermissionRule("visualization", PermissionBehavior.DENY))
-        engine.add_rule(PermissionRule("read_file", PermissionBehavior.ALLOW))
-        engine.add_rule(PermissionRule("nl_query", PermissionBehavior.ALLOW))
-    elif mode in (PermissionMode.DEFAULT, PermissionMode.AUTO):
-        engine.add_rule(PermissionRule("*", PermissionBehavior.ALLOW))
-
-    return engine
+    async def __call__(self, tool_name: str, tool_input: dict[str, Any]) -> bool:
+        live = self.live
+        if live is not None:
+            live.stop()
+        try:
+            params = json.dumps(tool_input, ensure_ascii=False)
+            if len(params) > 200:
+                params = params[:200] + "…"
+            answer = await asyncio.to_thread(
+                self.console.input,
+                f"[yellow]允许执行 {tool_name} {params} ? \\[y/N]: [/yellow]",
+            )
+            return answer.strip().lower() in ("y", "yes")
+        finally:
+            if live is not None:
+                live.start()
 
 
-async def run_agent(
-    query: str,
+def build_runtime(
     config: AgentConfig,
+    persist_path: str | Path | None,
+    approval_handler: ConsoleApprovalHandler | None = None,
+) -> AgentRuntime:
+    """Assemble the runtime via the composition root, then surface resume info."""
+    runtime = AgentRuntime.from_config(
+        config, persist_path=persist_path, approval_handler=approval_handler
+    )
+    if persist_path and len(runtime.session.history) > 0:
+        console.print(f"[dim]已恢复会话：{len(runtime.session.history)} 条历史消息[/dim]")
+    return runtime
+
+
+async def run_turn(
+    runtime: AgentRuntime,
+    query: str,
     shutdown: _ShutdownManager | None = None,
-    persist_path: str | Path | None = None,
+    approval: ConsoleApprovalHandler | None = None,
 ) -> None:
-    """Run a single agent query and stream output."""
-    loop_config = AgentLoopConfig(
-        system_prompt=config.system_prompt,
-        max_turns=config.max_turns,
-        max_tokens=config.max_tokens,
-        model=config.model,
-        api_key=config.api_key,
-    )
-    result_store = config.result_store(persist_path)
-    registry = build_registry(config, result_store=result_store)
-    skill_registry = build_skill_registry()
-    compressor = ContextCompressor(
-        budget_tokens=config.context_budget_tokens,
-        enable_snip=True,
-        enable_collapse=True,
-    )
-    store = build_message_store(persist_path)
-    permission_engine = build_permission_engine(config)
-
-    agent = AgentLoop(
-        loop_config,
-        registry,
-        compressor=compressor,
-        store=store,
-        skill_registry=skill_registry,
-        permission_engine=permission_engine,
-        sampling_config=config.sampling_config(),
-        result_store=result_store,
-    )
-
+    """Run one conversation turn and stream output to the terminal."""
     accumulated_text = ""
     current_tool = ""
+    artifacts: list[str] = []
+
+    # Held explicitly so an early break (shutdown/interrupt) still closes the
+    # generator — that's what triggers ledger closure and history write-back.
+    stream = runtime.session.send(query)
 
     with Live(console=console, refresh_per_second=10) as live:
-        async for event in agent.run(query):
-            if shutdown and shutdown.is_shutdown_requested():
-                logger.info("Shutdown requested, stopping agent loop.")
+        if approval is not None:
+            approval.live = live
+        try:
+            async for event in stream:
+                if shutdown and shutdown.is_shutdown_requested():
+                    logger.info("Shutdown requested, stopping agent loop.")
+                    break
+                if isinstance(event, StreamTextEvent):
+                    accumulated_text += event.text
+                    live.update(Panel(Markdown(accumulated_text), title="Agent"))
+
+                elif isinstance(event, ToolUseEvent):
+                    current_tool = event.tool_name
+                    live.update(
+                        Panel(
+                            f"Using tool: **{event.tool_name}**\n"
+                            f"```json\n{json.dumps(event.parameters, indent=2)}\n```",
+                            title="Tool Call",
+                            border_style="blue",
+                        )
+                    )
+
+                elif isinstance(event, ToolResultEvent):
+                    artifacts.extend(event.artifacts)
+                    display = event.content[:2000] + ("..." if len(event.content) > 2000 else "")
+                    live.update(
+                        Panel(
+                            display,
+                            title=f"Tool Result: {current_tool}",
+                            border_style="green" if not event.is_error else "red",
+                        )
+                    )
+
+                elif isinstance(event, RequestStartEvent):
+                    live.update(
+                        Panel(
+                            f"Model: {event.model_id} | Turn: {event.turn_count}",
+                            title="Thinking...",
+                            border_style="yellow",
+                        )
+                    )
+
+                elif isinstance(event, StateChangeEvent):
+                    if event.new_state == "AWAITING_CONFIRMATION":
+                        live.update(
+                            Panel(
+                                f"等待确认: {event.reason}",
+                                title="Permission",
+                                border_style="yellow",
+                            )
+                        )
+
+                elif isinstance(event, ErrorEvent):
+                    live.update(
+                        Panel(
+                            f"Error: {event.error}",
+                            title="Error",
+                            border_style="red",
+                        )
+                    )
+
+                elif isinstance(event, CompleteEvent):
+                    live.update(
+                        Panel(
+                            Markdown(accumulated_text or event.final_text),
+                            title=f"Complete ({event.terminal_reason})",
+                            border_style="green",
+                        )
+                    )
+        finally:
+            await stream.aclose()
+            if approval is not None:
+                approval.live = None
+
+    if artifacts:
+        console.print("[bold green]生成产物:[/bold green]")
+        for path in artifacts:
+            console.print(f"  📊 {path}")
+
+
+async def run_single(
+    query: str,
+    config: AgentConfig,
+    persist_path: str | Path | None,
+) -> None:
+    """One-shot mode: a single query in a fresh (or resumed) session."""
+    _shutdown_manager.install()
+    approval = ConsoleApprovalHandler(console)
+    runtime = build_runtime(config, persist_path, approval_handler=approval)
+    try:
+        await run_turn(runtime, query, _shutdown_manager, approval)
+    finally:
+        await runtime.shutdown()
+
+
+async def run_interactive(
+    config: AgentConfig,
+    persist_path: str | Path | None,
+) -> None:
+    """Interactive mode: one session, one kernel, one event loop for all turns."""
+    _shutdown_manager.install()
+    console.print(
+        Panel(
+            "[bold blue]Data Analysis Agent[/bold blue]\n"
+            f"Model: {config.model}\n"
+            "Type 'exit' or 'quit' to leave.",
+            title="Welcome",
+        )
+    )
+    approval = ConsoleApprovalHandler(console)
+    runtime = build_runtime(config, persist_path, approval_handler=approval)
+    try:
+        while not _shutdown_manager.is_shutdown_requested():
+            try:
+                query = await asyncio.to_thread(console.input, "[bold green]> [/bold green]")
+            except (EOFError, KeyboardInterrupt):
                 break
-            if isinstance(event, StreamTextEvent):
-                accumulated_text += event.text
-                live.update(Panel(Markdown(accumulated_text), title="Agent"))
-
-            elif isinstance(event, ToolUseEvent):
-                current_tool = event.tool_name
-                live.update(
-                    Panel(
-                        f"Using tool: **{event.tool_name}**\n```json\n{json.dumps(event.parameters, indent=2)}\n```",
-                        title="Tool Call",
-                        border_style="blue",
-                    )
+            query = query.strip()
+            if query.lower() in ("exit", "quit", "q"):
+                break
+            if not query:
+                continue
+            feedback = parse_explicit_feedback(query)
+            if feedback is not None:
+                ok = runtime.session.attach_feedback(feedback)
+                console.print(
+                    "[dim]已记录反馈,谢谢。[/dim]" if ok else "[dim]当前无可反馈的轮次。[/dim]"
                 )
-
-            elif isinstance(event, ToolResultEvent):
-                display = event.content[:2000] + ("..." if len(event.content) > 2000 else "")
-                live.update(
-                    Panel(
-                        display,
-                        title=f"Tool Result: {current_tool}",
-                        border_style="green" if not event.is_error else "red",
-                    )
-                )
-
-            elif isinstance(event, RequestStartEvent):
-                live.update(
-                    Panel(
-                        f"Model: {event.model_id} | Turn: {event.turn_count}",
-                        title="Thinking...",
-                        border_style="yellow",
-                    )
-                )
-
-            elif isinstance(event, ErrorEvent):
-                live.update(
-                    Panel(
-                        f"Error: {event.error}",
-                        title="Error",
-                        border_style="red",
-                    )
-                )
-
-            elif isinstance(event, CompleteEvent):
-                live.update(
-                    Panel(
-                        Markdown(accumulated_text or event.final_text),
-                        title=f"Complete ({event.terminal_reason})",
-                        border_style="green",
-                    )
-                )
+                continue
+            await run_turn(runtime, query, _shutdown_manager, approval)
+            console.print()
+    finally:
+        await runtime.shutdown()
 
 
 def main() -> None:
@@ -283,32 +308,11 @@ def main() -> None:
         )
         sys.exit(1)
 
-    _shutdown_manager.install()
     try:
         if args.interactive or not args.query:
-            # Interactive mode
-            console.print(
-                Panel(
-                    "[bold blue]Data Analysis Agent[/bold blue]\n"
-                    f"Model: {config.model}\n"
-                    "Type 'exit' or 'quit' to leave.",
-                    title="Welcome",
-                )
-            )
-            while True:
-                try:
-                    query = console.input("[bold green]> [/bold green]")
-                except (EOFError, KeyboardInterrupt):
-                    break
-                query = query.strip()
-                if query.lower() in ("exit", "quit", "q"):
-                    break
-                if not query:
-                    continue
-                asyncio.run(run_agent(query, config, _shutdown_manager, args.persist))
-                console.print()
+            asyncio.run(run_interactive(config, args.persist))
         else:
-            asyncio.run(run_agent(args.query, config, _shutdown_manager, args.persist))
+            asyncio.run(run_single(args.query, config, args.persist))
     finally:
         _shutdown_manager.restore()
 

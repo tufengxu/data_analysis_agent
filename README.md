@@ -9,11 +9,16 @@ A data analysis agent built on the **ReAct (Reasoning + Acting)** pattern, inspi
 ```
 data_analysis_agent/
 ├── agent_loop.py          # Core ReAct while-loop engine (9-step pipeline per turn)
+├── session.py             # AgentSession: multi-turn history carrier + resume
 ├── state_machine.py       # Immutable state container, ContinueReason, Terminal
 ├── events.py              # Async event stream (streaming text, tool calls, state changes)
 ├── config.py              # Configuration management (env / file / CLI)
 ├── persistence.py         # Append-only JSONL message store with session fork
-├── __main__.py            # CLI entry point (rich UI, interactive mode)
+├── artifacts.py           # ArtifactStore: persists charts for user delivery
+├── __main__.py            # CLI entry point (rich UI, interactive mode, approval prompts)
+├── kernel/                # Persistent analysis kernel (state survives across calls)
+│   ├── manager.py         # Lifecycle + line-protocol JSON I/O, crash/timeout recovery
+│   └── kernel_main.py     # Sandbox-side REPL (self-contained, composed + injected)
 ├── protocol/              # Anthropic Messages API adapter
 │   ├── client.py          # Streaming/non-streaming API client with retry & lazy imports
 │   └── messages.py        # ContentBlock type hierarchy
@@ -27,7 +32,20 @@ data_analysis_agent/
 ├── skills/                # Domain-specific analysis workflows
 │   ├── base.py            # Skill abstract base class
 │   ├── registry.py        # Skill registration and keyword matching
-│   └── builtin.py         # Descriptive, Correlation, Trend analysis skills
+│   ├── builtin.py         # Descriptive, Correlation, Trend, Report skills
+│   └── loader.py          # DeclarativeSkill: load/save skills as JSON records (L2 carrier)
+├── telemetry/             # Self-evolution corpus: trajectory recording + feedback
+│   ├── trajectory.py      # TurnRecord + TrajectoryLogger (EventConsumer side channel)
+│   └── feedback.py        # Explicit (/good /bad) + implicit (rephrase) signals
+├── memory/                # L1 domain memory (cross-session learning)
+│   ├── model.py           # MemoryEntry (3 kinds) + DatasetProfile (struct/stats + fingerprint)
+│   ├── store.py           # Keyword/substring retrieval; metric light-confirm
+│   ├── profiler.py        # Deterministic dataset profiling + layered staleness
+│   └── injector.py        # Inject recalls into prompt; capture profiles on reads
+├── evolution/             # Offline pipeline (never in the live loop)
+│   ├── synthesizer.py     # Trajectory clusters → candidate skills (overfit guards)
+│   ├── evaluator.py       # Fixture rerun + A/B + sample gate → promote/rollback
+│   └── __main__.py        # `python -m data_analysis_agent.evolution`
 ├── context/               # Context management and compression
 │   └── compression.py     # 5-level compression pipeline
 ├── sampling/              # Sampling-based compaction for large tool results
@@ -43,14 +61,32 @@ data_analysis_agent/
 ## Key Features
 
 - **ReAct AgentLoop**: Single `while` loop with 9-step pipeline per turn
+- **Multi-Turn Sessions**: `AgentSession` carries history across turns; interactive mode
+  shares one session/kernel/event-loop, `--persist` resumes across processes
+- **Persistent Kernel**: `python_analysis` state (variables, DataFrames) survives across
+  calls; crash/timeout auto-restart with explicit state-loss notice, stateless fallback
 - **Streaming First**: Real-time event stream for UI integration
 - **Fail-Closed Security**: Tools default to serial, non-concurrent, destructive
-- **Deny-First Permissions**: deny > ask > allow rule evaluation wired into tool execution
+- **Deny-First Permissions**: deny > ask > allow wired into tool execution; ASK escalates
+  to an interactive approval prompt (fail-closed without one)
+- **Artifact Delivery**: chart images survive sandbox teardown via ArtifactStore and are
+  reported to the user as real file paths
+- **HTML Reports**: `html_report` renders structured findings into a self-contained,
+  mobile-friendly H5 page with ECharts charts (CDN by default; configure a local
+  `echarts_src` file to embed for fully-offline reports)
+- **Self-Evolution (domain-aware)**: every session is recorded as a trajectory
+  (`telemetry/`); domain memory (`memory/`) learns dataset profiles, metric
+  definitions, and analysis preferences across sessions — structure is remembered,
+  numeric findings deliberately are not (ADR 0004); the offline pipeline
+  (`evolution/`) distills recurring uncovered tasks into candidate skills and gates
+  promotion by rerunning them on frozen fixtures, with a minimum-sample fallback to
+  human review (ADR 0005)
 - **Immutable State**: Cross-iteration state updates via `state.with_x()` pattern
 - **Error Recovery**: Max-token escalation, prompt-too-long recovery chain, ledger closure
-- **Context Compression**: 5-level pipeline (Budget → Snip → Microcompact → Collapse → Auto-Compact)
+- **Context Compression**: 5-level pipeline (Budget → Snip → Microcompact → Collapse →
+  Auto-Compact with LLM summary), pairing-safe and CJK-aware
 - **Result Sampling**: Oversized tool results become L0–L3 sampled summaries (schema + exact/estimated stats + stratified-reservoir sample + outliers) instead of blind truncation — exact in-sandbox, stdlib fallback in-harness
-- **Skill System**: Domain-specific workflows with deterministic priority routing and tool allowlists
+- **Skill System**: Domain-specific workflows routed on the latest user message, with tool allowlists
 - **Persistence**: Append-only JSONL store, session resume, fork
 
 ## Quick Start
@@ -125,20 +161,23 @@ asyncio.run(main())
 
 ## Built-in Tools
 
-| Tool              | Purpose                                            |
-| ----------------- | -------------------------------------------------- |
-| `file_read`       | Read local files with offset/limit                 |
-| `python_analysis` | Execute restricted Python code for data processing |
-| `nl_query`        | Natural language to structured query               |
-| `visualization`   | Generate matplotlib / seaborn / plotly charts      |
+| Tool              | Purpose                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `file_read`       | Read local files with offset/limit                           |
+| `python_analysis` | Execute Python in the persistent kernel (stateless fallback) |
+| `nl_query`        | Natural language to structured query                         |
+| `visualization`   | Generate matplotlib / seaborn / plotly charts                |
+| `retrieve_result` | Page through the original of a summarized tool result        |
+| `html_report`     | Render a self-contained H5 HTML report with ECharts charts   |
 
 ## Built-in Skills
 
-| Skill                  | Description                                         |
-| ---------------------- | --------------------------------------------------- |
-| `descriptive_analysis` | Mean, median, std, percentiles, distributions       |
-| `correlation_analysis` | Pearson / Spearman matrices, heatmaps               |
-| `trend_analysis`       | Time-series decomposition, seasonality, forecasting |
+| Skill                  | Description                                            |
+| ---------------------- | ------------------------------------------------------ |
+| `descriptive_analysis` | Mean, median, std, percentiles, distributions          |
+| `correlation_analysis` | Pearson / Spearman matrices, heatmaps                  |
+| `trend_analysis`       | Time-series decomposition, seasonality, forecasting    |
+| `report_generation`    | H5 HTML analysis report with ECharts charts and tables |
 
 ## Development
 

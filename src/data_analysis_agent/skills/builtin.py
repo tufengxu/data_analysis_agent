@@ -105,6 +105,62 @@ class CorrelationAnalysisSkill(Skill):
         )
 
 
+class ReportGenerationSkill(Skill):
+    """Skill for producing an H5 HTML report with ECharts visualizations."""
+
+    @property
+    def name(self) -> str:
+        return "report_generation"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Produce a self-contained H5 HTML analysis report with ECharts charts. "
+            "Covers executive summary, sectioned findings, charts and data tables."
+        )
+
+    @property
+    def instructions(self) -> str:
+        return (
+            "When generating an HTML analysis report:\n"
+            "1. Run the analysis first: load data and compute every statistic, "
+            "aggregate and series with python_analysis (kernel state persists "
+            "across calls — reuse variables instead of reloading)\n"
+            "2. Print chart-ready data as compact JSON (e.g. lists of category "
+            "labels and values) so you can copy exact numbers into chart options\n"
+            "3. Design the report: an executive summary plus one section per "
+            "finding; every key claim should be backed by a chart or table\n"
+            "4. Call html_report ONCE with all sections. Each chart is a full "
+            "ECharts `option` object (set textStyle, axis names and series names "
+            "in the user's language); keep tables small (top-N rows)\n"
+            "5. Tell the user the report file path returned by the tool\n"
+        )
+
+    @property
+    def keywords(self) -> list[str]:
+        return [
+            "report",
+            "html report",
+            "dashboard",
+            "echarts",
+            "报告",
+            "分析报告",
+            "可视化报告",
+            "汇报",
+            "h5",
+        ]
+
+    @property
+    def allowed_tools(self) -> list[str]:
+        return ["read_file", "python_analysis", "retrieve_result", "html_report"]
+
+    async def execute(self, query: str, context: dict[str, Any]) -> SkillResult:
+        return SkillResult(
+            output=f"Report generation skill activated for: {query}",
+            tools_used=["read_file", "python_analysis", "html_report"],
+        )
+
+
 class TrendAnalysisSkill(Skill):
     """Skill for time-series trend analysis."""
 

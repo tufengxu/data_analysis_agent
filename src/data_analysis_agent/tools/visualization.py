@@ -5,6 +5,8 @@ Outputs: PNG, SVG, HTML via matplotlib, seaborn, plotly.
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
 from typing import Any
 
 from .base import CanUseToolFn, Tool, ToolResult, ValidationResult
@@ -12,6 +14,12 @@ from .base import CanUseToolFn, Tool, ToolResult, ValidationResult
 
 class VisualizationTool(Tool):
     """Generate visualizations from data or analysis results."""
+
+    def __init__(self, artifact_dir: str | Path | None = None) -> None:
+        # Default save location for generated chart code. Relative paths land
+        # in the execution sandbox and may be destroyed with it; an absolute
+        # artifact dir makes charts actually reachable by the user.
+        self.artifact_dir = Path(artifact_dir).expanduser().resolve() if artifact_dir else None
 
     @property
     def name(self) -> str:
@@ -151,7 +159,7 @@ class VisualizationTool(Tool):
         output_path: str,
     ) -> str:
         """Generate matplotlib/seaborn/plotly code for the requested chart."""
-        save_path = output_path or f"chart.{output_format}"
+        save_path = output_path or self._default_save_path(output_format)
 
         if output_format == "html":
             return self._generate_plotly_code(
@@ -160,6 +168,12 @@ class VisualizationTool(Tool):
         return self._generate_matplotlib_code(
             chart_type, data_source, x_col, y_col, title, save_path, output_format
         )
+
+    def _default_save_path(self, output_format: str) -> str:
+        name = f"chart_{uuid.uuid4().hex[:8]}.{output_format}"
+        if self.artifact_dir is not None:
+            return str(self.artifact_dir / name)
+        return name
 
     def _generate_matplotlib_code(
         self,
@@ -213,8 +227,23 @@ class VisualizationTool(Tool):
                 "plt.close()",
             ]
         )
+        code_lines.extend(self._emit_artifact_lines(save_path, fmt))
 
         return "\n".join(code_lines)
+
+    @staticmethod
+    def _emit_artifact_lines(save_path: str, fmt: str) -> list[str]:
+        """Report the saved chart to the sandbox so it reaches ArtifactStore.
+
+        ``agent_result`` only exists inside the python_analysis sandbox/kernel;
+        the guard keeps the generated code runnable elsewhere.
+        """
+        return [
+            "try:",
+            f"    agent_result([{{'type': 'image', 'path': r'{save_path}', 'format': '{fmt}'}}])",
+            "except NameError:",
+            "    pass",
+        ]
 
     def _generate_plotly_code(
         self,
@@ -267,5 +296,6 @@ class VisualizationTool(Tool):
                 f"print('Interactive chart saved to: {save_path}')",
             ]
         )
+        code_lines.extend(self._emit_artifact_lines(save_path, "html"))
 
         return "\n".join(code_lines)

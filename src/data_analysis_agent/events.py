@@ -24,6 +24,7 @@ class EventType(Enum):
     STATE_CHANGE = auto()  # Session-level state transition
     SYSTEM_MESSAGE = auto()  # System notification (compact boundary, etc.)
     REQUEST_START = auto()  # New API request initiated
+    USAGE = auto()  # Token usage reported after a model response
     TOMBSTONE = auto()  # Synthetic tool_result for orphan tool_use
     ERROR = auto()  # Recoverable or terminal error
     COMPLETE = auto()  # Terminal: normal completion
@@ -84,6 +85,7 @@ class ToolResultEvent(AgentEvent):
     content: str = ""
     is_error: bool = False
     abort_reason: str | None = None
+    artifacts: tuple[str, ...] = ()  # File paths of persisted outputs (charts etc.)
 
     def get_event_type(self) -> EventType:
         return EventType.TOOL_RESULT
@@ -120,9 +122,21 @@ class RequestStartEvent(AgentEvent):
     model_id: str = ""
     max_output_tokens: int = 0
     turn_count: int = 0
+    active_skill: str | None = None
 
     def get_event_type(self) -> EventType:
         return EventType.REQUEST_START
+
+
+@dataclass(frozen=True)
+class UsageEvent(AgentEvent):
+    """Token usage reported after a model response (telemetry consumes this)."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    def get_event_type(self) -> EventType:
+        return EventType.USAGE
 
 
 @dataclass(frozen=True)

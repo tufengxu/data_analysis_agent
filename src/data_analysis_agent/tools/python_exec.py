@@ -10,6 +10,7 @@ import ast
 import asyncio
 import base64
 import json
+import logging
 import os
 import shutil
 import sys
@@ -18,15 +19,26 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from ..kernel.manager import (
+    KernelCrashError,
+    KernelError,
+    KernelManager,
+    KernelStartError,
+    KernelTimeoutError,
+)
 from ..sampling import render
 from ..sampling.config import SamplingConfig
 from .base import CanUseToolFn, Tool, ToolResult, ValidationResult
+
+logger = logging.getLogger(__name__)
 
 # Source of the self-contained DataFrame summarizer, inlined into the sandbox
 # script (the subprocess runs with PYTHONPATH="" and cannot import this package).
 _SANDBOX_SUMMARY_SRC = (
     Path(__file__).resolve().parent.parent / "sampling" / "sandbox_summary.py"
 ).read_text(encoding="utf-8")
+
+_spawn_subprocess = asyncio.create_subprocess_exec
 
 
 class PythonAnalysisTool(Tool):
@@ -44,6 +56,7 @@ class PythonAnalysisTool(Tool):
         default_timeout: int = DEFAULT_TIMEOUT,
         max_timeout: int = MAX_TIMEOUT,
         sampling_config: SamplingConfig | None = None,
+        kernel: KernelManager | None = None,
     ) -> None:
         self.allowed_paths = [
             Path(path).expanduser().resolve() for path in (allowed_paths or [Path.cwd()])
@@ -51,6 +64,10 @@ class PythonAnalysisTool(Tool):
         self.default_timeout = default_timeout
         self.max_timeout = max_timeout
         self.sampling_config = sampling_config or SamplingConfig()
+        # Persistent kernel (state survives across calls). None -> stateless
+        # one-shot subprocess per call, the permanent fallback path.
+        self.kernel = kernel
+        self._kernel_disabled = False
 
     @property
     def name(self) -> str:
@@ -238,6 +255,55 @@ class PythonAnalysisTool(Tool):
         code = input_data["code"]
         timeout = input_data.get("timeout", self.default_timeout)
 
+        if self.kernel is not None and not self._kernel_disabled:
+            return await self._call_kernel(code, timeout)
+        return await self._call_stateless(code, timeout)
+
+    async def _call_kernel(self, code: str, timeout: int) -> ToolResult:
+        """Run in the persistent kernel; degrade per the robustness chain.
+
+        start-failure -> permanent stateless fallback; timeout/crash ->
+        restart + explicit "variables lost" notice so the model can rebuild.
+        """
+        assert self.kernel is not None
+        try:
+            kres = await self.kernel.execute(code, timeout)
+        except KernelStartError as e:
+            # Permanent downgrade to stateless: every later python_analysis loses
+            # cross-call state. This is a behavior change — surface it, once.
+            logger.warning("persistent kernel unavailable, falling back to stateless: %r", e)
+            self._kernel_disabled = True
+            return await self._call_stateless(code, timeout)
+        except KernelTimeoutError:
+            await self._safe_restart()
+            return ToolResult(
+                content=(
+                    f"Execution timed out after {timeout} seconds. "
+                    "[kernel restarted; session variables lost]"
+                ),
+                is_error=True,
+            )
+        except KernelCrashError as e:
+            await self._safe_restart()
+            return ToolResult(
+                content=f"Kernel crashed: {e} [kernel restarted; session variables lost]",
+                is_error=True,
+            )
+        stderr_text = "\n".join(part for part in (kres.stderr, kres.error) if part)
+        return self._compose_result(
+            kres.stdout, stderr_text, kres.outputs, is_error=kres.error is not None
+        )
+
+    async def _safe_restart(self) -> None:
+        assert self.kernel is not None
+        try:
+            await self.kernel.restart()
+        except KernelError as e:
+            logger.warning("kernel restart failed, downgrading to stateless: %r", e)
+            self._kernel_disabled = True
+
+    async def _call_stateless(self, code: str, timeout: int) -> ToolResult:
+        """One-shot subprocess execution (original behavior; kernel fallback)."""
         wrapped_code = self._wrap_code(code)
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -247,7 +313,7 @@ class PythonAnalysisTool(Tool):
         # Run in isolated temp directory to restrict file-system visibility
         cwd = tempfile.mkdtemp(prefix="agent_sandbox_")
         try:
-            proc = await asyncio.create_subprocess_exec(
+            proc = await _spawn_subprocess(
                 sys.executable,
                 temp_path,
                 stdout=asyncio.subprocess.PIPE,
@@ -272,63 +338,18 @@ class PythonAnalysisTool(Tool):
             stdout_text = stdout.decode("utf-8", errors="replace")
             stderr_text = stderr.decode("utf-8", errors="replace")
 
-            result_parts = []
-            if stdout_text:
-                result_parts.append(f"[stdout]\n{stdout_text}")
-            if stderr_text:
-                result_parts.append(f"[stderr]\n{stderr_text}")
-
-            structured = None
+            outputs: list[dict[str, Any]] = []
             for line in stdout_text.splitlines():
                 if line.startswith("__AGENT_RESULT__:"):
                     with suppress(json.JSONDecodeError):
                         structured = json.loads(line[len("__AGENT_RESULT__:") :])
+                        if isinstance(structured, dict):
+                            outs = structured.get("outputs", [])
+                            if isinstance(outs, list):
+                                outputs.extend(o for o in outs if isinstance(o, dict))
 
-            if structured:
-                outputs = structured.get("outputs", [])
-                images = []
-                for item in outputs:
-                    if item.get("type") == "image":
-                        img_path = item.get("path")
-                        if img_path and Path(img_path).exists():
-                            with open(img_path, "rb") as img:
-                                b64 = base64.b64encode(img.read()).decode()
-                            images.append({"format": item.get("format", "png"), "data": b64})
-
-                metadata: dict[str, Any] = {"structured": structured}
-                if images:
-                    metadata["images"] = images
-
-                table_summaries = [
-                    item["summary"]
-                    for item in outputs
-                    if item.get("type") == "table_summary" and "summary" in item
-                ]
-                if table_summaries:
-                    rendered = "\n\n".join(
-                        render.render_summary_dict(summary) for summary in table_summaries
-                    )
-                    clean_stdout = self._clean_stdout(stdout_text)
-                    content = (
-                        f"{clean_stdout}\n\n{rendered}"
-                        if clean_stdout and len(clean_stdout) < 2000
-                        else rendered
-                    )
-                    if stderr_text:
-                        content += f"\n\n[stderr]\n{stderr_text}"
-                    return ToolResult(content=content, metadata=metadata)
-
-                return ToolResult(
-                    content="\n".join(result_parts) if result_parts else "Execution completed.",
-                    metadata=metadata,
-                )
-
-            is_error = proc.returncode != 0
-            return ToolResult(
-                content="\n\n".join(result_parts)
-                if result_parts
-                else "Execution completed with no output.",
-                is_error=is_error,
+            return self._compose_result(
+                stdout_text, stderr_text, outputs, is_error=proc.returncode != 0
             )
 
         finally:
@@ -336,6 +357,68 @@ class PythonAnalysisTool(Tool):
                 os.unlink(temp_path)
             with suppress(OSError):
                 shutil.rmtree(cwd, ignore_errors=True)
+
+    def _compose_result(
+        self,
+        stdout_text: str,
+        stderr_text: str,
+        outputs: list[dict[str, Any]],
+        is_error: bool,
+    ) -> ToolResult:
+        """Build the ToolResult shared by kernel and stateless paths."""
+        clean_stdout = self._clean_stdout(stdout_text)
+        result_parts = []
+        if clean_stdout:
+            result_parts.append(f"[stdout]\n{clean_stdout}")
+        if stderr_text:
+            result_parts.append(f"[stderr]\n{stderr_text}")
+
+        if not outputs:
+            return ToolResult(
+                content="\n\n".join(result_parts) or "Execution completed with no output.",
+                is_error=is_error,
+            )
+
+        images = []
+        for item in outputs:
+            if item.get("type") == "image":
+                img_path = item.get("path")
+                if img_path and Path(img_path).exists():
+                    with open(img_path, "rb") as img:
+                        b64 = base64.b64encode(img.read()).decode()
+                    # path lets the artifact seam reuse an already-delivered
+                    # file instead of writing a duplicate copy.
+                    images.append(
+                        {"format": item.get("format", "png"), "data": b64, "path": str(img_path)}
+                    )
+
+        metadata: dict[str, Any] = {"structured": {"outputs": outputs}}
+        if images:
+            metadata["images"] = images
+
+        table_summaries = [
+            item["summary"]
+            for item in outputs
+            if item.get("type") == "table_summary" and "summary" in item
+        ]
+        if table_summaries:
+            rendered = "\n\n".join(
+                render.render_summary_dict(summary) for summary in table_summaries
+            )
+            content = (
+                f"{clean_stdout}\n\n{rendered}"
+                if clean_stdout and len(clean_stdout) < 2000
+                else rendered
+            )
+            if stderr_text:
+                content += f"\n\n[stderr]\n{stderr_text}"
+            return ToolResult(content=content, metadata=metadata, is_error=is_error)
+
+        return ToolResult(
+            content="\n\n".join(result_parts) or "Execution completed.",
+            metadata=metadata,
+            is_error=is_error,
+        )
 
     @staticmethod
     def _clean_stdout(stdout_text: str) -> str:

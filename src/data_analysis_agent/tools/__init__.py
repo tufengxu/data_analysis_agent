@@ -2,6 +2,7 @@
 
 from .base import CanUseToolFn, PermissionResult, Tool, ToolResult, ValidationResult
 from .file_read import FileReadTool
+from .html_report import HtmlReportTool
 from .nl_query import NlQueryTool
 from .python_exec import PythonAnalysisTool
 from .registry import ToolRegistry
@@ -10,6 +11,7 @@ from .visualization import VisualizationTool
 __all__ = [
     "CanUseToolFn",
     "FileReadTool",
+    "HtmlReportTool",
     "NlQueryTool",
     "PermissionResult",
     "PythonAnalysisTool",

@@ -9,6 +9,7 @@ Loads from:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from dataclasses import dataclass, field, replace
@@ -29,7 +30,8 @@ class AgentConfig:
     # System prompt
     system_prompt: str = (
         "You are a data analysis assistant. You can read files, execute Python code, "
-        "query data sources, and generate visualizations. Classify each request before acting: "
+        "query data sources, generate visualizations, and produce H5 HTML analysis "
+        "reports with ECharts charts (html_report). Classify each request before acting: "
         "answer simple questions directly, use one tool directly for simple single-tool tasks, "
         "and write a concise plan before executing complex multi-step tasks. "
         "When a matching skill is active, follow that skill before generic reasoning or tools."
@@ -56,6 +58,68 @@ class AgentConfig:
     result_store_ttl_seconds: int = 3600
     result_store_max_total_mb: int = 64
     result_store_max_entry_mb: int = 8
+
+    # Persistent analysis kernel (state survives across python_analysis calls).
+    # Disable to force the stateless one-shot sandbox per call.
+    persistent_kernel: bool = True
+
+    # ECharts source for HTML reports: an http(s) URL becomes a <script src>
+    # tag; a local file path is inlined for fully-offline reports.
+    echarts_src: str = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
+
+    # Self-evolution: record session trajectories (the corpus everything learns
+    # from). Off → no trajectory files, no memory extraction input.
+    enable_telemetry: bool = True
+
+    # Domain memory: inject dataset profiles / metric definitions / prefs into
+    # the system prompt and capture profiles on tabular reads.
+    enable_memory: bool = True
+    memory_inject_budget_tokens: int = 1500
+
+    def artifacts_dir(self, persist_path: str | Path | None = None) -> Path:
+        """Directory for user-facing artifacts (charts); follows persist_path."""
+        import tempfile
+
+        if persist_path:
+            path = Path(persist_path).expanduser().resolve().parent / "artifacts"
+        else:
+            path = Path(tempfile.mkdtemp(prefix="daa_artifacts_"))
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def kernel_work_dir(self, persist_path: str | Path | None = None) -> Path:
+        """Session workspace for the persistent kernel; follows persist_path."""
+        import tempfile
+
+        if persist_path:
+            path = Path(persist_path).expanduser().resolve().parent / "workspace"
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+        return Path(tempfile.mkdtemp(prefix="daa_kernel_"))
+
+    def daa_home(self) -> Path:
+        """Root for cross-session evolution assets (trajectories, memory, skills)."""
+        return Path(os.environ.get("DAA_HOME", str(Path.home() / ".daa")))
+
+    def trajectories_dir(self) -> Path:
+        return self._evolution_subdir("trajectories")
+
+    def memory_dir(self) -> Path:
+        return self._evolution_subdir("memory")
+
+    def skills_dir(self) -> Path:
+        return self._evolution_subdir("skills")
+
+    def _evolution_subdir(self, name: str) -> Path:
+        """Return a ~/.daa/<name> path, creating it best-effort.
+
+        mkdir is suppressed (not asserted): a read-only DAA_HOME must not crash
+        startup — the store layers re-check writability and degrade gracefully.
+        """
+        path = self.daa_home() / name
+        with contextlib.suppress(OSError):
+            path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def result_store(self, persist_path: str | Path | None = None) -> Any:
         """Build a ResultStore; dir follows persist_path (else a tempdir)."""
