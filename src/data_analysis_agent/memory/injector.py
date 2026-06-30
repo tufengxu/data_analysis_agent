@@ -51,6 +51,9 @@ class MemoryInjector:
         self.profiles = profile_store
         self.memory = memory_store
         self.budget_tokens = budget_tokens
+        # Unconfirmed metric (kind, key) pairs surfaced in the latest turn,
+        # awaiting adjudication (accepted vs rephrased) at the next turn.
+        self._pending: set[tuple[str, str]] = set()
 
     # --- read side (memory_injector callback) ---------------------------
 
@@ -66,9 +69,12 @@ class MemoryInjector:
 
         hits = self.memory.search(query, top_k=8)
         if hits:
-            # Touch first: a surfacing counts as a use, which may cross the
-            # confirm threshold — so the wording reflects the post-use state
-            # (touch mutates the entry in place; hits hold the same objects).
+            # Record which unconfirmed metrics were surfaced this turn so the
+            # next turn can adjudicate them (accepted vs rephrased). touch only
+            # updates recency — surfacing is NOT acceptance (see adjudicate).
+            self._pending = {
+                (e.kind, e.key) for e in hits if e.kind == "metric_definition" and not e.confirmed
+            }
             for e in hits:
                 self.memory.touch(e.kind, e.key)
             unconfirmed = any(e.kind == "metric_definition" and not e.confirmed for e in hits)
@@ -93,6 +99,18 @@ class MemoryInjector:
             lines.pop()
         return "\n".join(lines) + "\n…(记忆超预算已截断)"
 
+    def adjudicate(self, accepted: bool) -> None:
+        """Resolve the previous turn's surfaced metrics (rephrase-gated).
+
+        Called once per turn by the session BEFORE the next render: ``accepted``
+        is True when the user did not rephrase/reject, advancing those metrics
+        toward auto-confirmation; a rephrase leaves them unconfirmed.
+        """
+        if accepted:
+            for kind, key in self._pending:
+                self.memory.note_accepted_use(kind, key)
+        self._pending.clear()
+
     @staticmethod
     def _mentions(query: str, path: str) -> bool:
         stem = Path(path).name
@@ -112,14 +130,32 @@ class MemoryInjector:
 
     # --- helpers for explicit metric capture ----------------------------
 
-    def remember_metric(self, name: str, definition: str, *, session_id: str = "") -> None:
-        """Store a metric definition as unconfirmed (light-confirm pending)."""
+    def remember_metric(
+        self, name: str, definition: str, *, confirmed: bool = False, session_id: str = ""
+    ) -> None:
+        """Store a metric definition.
+
+        Default ``confirmed=False`` is the inferred/mined path (light-confirm
+        pending). The explicit ``/define`` command passes ``confirmed=True``:
+        the user stating the canonical rule IS the confirmation.
+        """
         self.memory.put(
             MemoryEntry(
                 kind="metric_definition",
                 key=name,
                 content=definition,
                 source_session=session_id,
-                confirmed=False,
+                confirmed=confirmed,
+            )
+        )
+
+    def remember_pref(self, content: str, *, key: str = "", session_id: str = "") -> None:
+        """Store a user-stated analysis preference (trusted: confirmed by default)."""
+        self.memory.put(
+            MemoryEntry(
+                kind="analysis_pref",
+                key=key or content[:32],
+                content=content,
+                source_session=session_id,
             )
         )

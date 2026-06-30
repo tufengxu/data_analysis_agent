@@ -102,12 +102,15 @@ def test_memory_store_search_and_upsert(tmp_path):
     assert store.search("完全无关的查询") == []
 
 
-def test_metric_auto_confirms_after_uses(tmp_path):
+def test_metric_confirms_after_accepted_uses(tmp_path):
     store = MemoryStore(tmp_path / "mem")
     store.put(MemoryEntry(kind="metric_definition", key="GMV", content="不含退款", confirmed=False))
     assert store.get("metric_definition", "GMV").confirmed is False
+    # Surfacing alone (touch) must not confirm — only accepted uses do.
+    store.touch("metric_definition", "GMV")
+    assert store.get("metric_definition", "GMV").confirmed is False
     for _ in range(CONFIRM_AFTER_USES):
-        store.touch("metric_definition", "GMV")
+        store.note_accepted_use("metric_definition", "GMV")
     assert store.get("metric_definition", "GMV").confirmed is True
 
 
@@ -148,16 +151,18 @@ def test_injector_record_tool_captures_profile(tmp_path):
     assert len(inj.profiles.all()) == 1
 
 
-def test_injector_light_confirm_wording_and_touch(tmp_path):
+def test_injector_light_confirm_is_rephrase_gated(tmp_path):
     inj = _injector(tmp_path)
     inj.remember_metric("活跃用户", "过去7天有登录", session_id="s1")
 
     first = inj.render("活跃用户的趋势")
     assert "基于历史推断" in first  # unconfirmed wording shown
-    # Second surfacing reaches the confirm threshold → wording drops.
-    second = inj.render("活跃用户分布")
-    assert "基于历史推断" not in second
+    # An accepted (un-rephrased) turn advances confirmation; mere surfacing does not.
+    for _ in range(CONFIRM_AFTER_USES):
+        inj.render("活跃用户分布")
+        inj.adjudicate(accepted=True)
     assert inj.memory.get("metric_definition", "活跃用户").confirmed is True
+    assert "基于历史推断" not in inj.render("活跃用户月度")
 
 
 def test_injector_truncates_to_budget(tmp_path):

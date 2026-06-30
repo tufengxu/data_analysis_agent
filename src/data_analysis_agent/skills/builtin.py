@@ -161,6 +161,74 @@ class ReportGenerationSkill(Skill):
         )
 
 
+class JointAnalysisSkill(Skill):
+    """Skill for multi-sheet / multi-file joint analysis (discover → join → analyse)."""
+
+    @property
+    def name(self) -> str:
+        return "joint_analysis"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Analyse data spread across multiple sheets or multiple files: discover "
+            "each table's structure, join/merge them on shared keys, then analyse the "
+            "combined dataset. Use for Excel workbooks with several sheets or a folder "
+            "of related CSV/Excel files."
+        )
+
+    @property
+    def instructions(self) -> str:
+        return (
+            "When joining data across sheets or files:\n"
+            "1. Run data_profile on each file (or the directory) FIRST to list every "
+            "sheet, its columns and dtypes; note the absolute paths it reports\n"
+            "2. Load each table once with python_analysis (pd.read_csv / "
+            "pd.read_excel(path, sheet_name=...)) using those absolute paths; the "
+            "kernel keeps DataFrames across calls, so do not reload\n"
+            "3. Identify the join key(s) by comparing column names and value overlap; "
+            "decide the join type (inner/left/outer) and granularity deliberately\n"
+            "4. Merge with pd.merge / pd.concat, then VALIDATE the join: compare row "
+            "counts before vs after, check for unmatched keys (how='left' + indicator) "
+            "and unintended row multiplication from many-to-many keys\n"
+            "5. Only after the combined table is verified, run the requested analysis "
+            "and report which keys were joined and how many rows matched\n"
+        )
+
+    @property
+    def keywords(self) -> list[str]:
+        return [
+            "join",
+            "merge",
+            "multi-file",
+            "multi-sheet",
+            "联合分析",
+            "多表",
+            "多文件",
+            "多sheet",
+            "关联",
+            "合并",
+            "vlookup",
+        ]
+
+    @property
+    def allowed_tools(self) -> list[str]:
+        return [
+            "read_file",
+            "data_profile",
+            "python_analysis",
+            "retrieve_result",
+            "visualization",
+            "html_report",
+        ]
+
+    async def execute(self, query: str, context: dict[str, Any]) -> SkillResult:
+        return SkillResult(
+            output=f"Joint analysis skill activated for: {query}",
+            tools_used=["data_profile", "python_analysis"],
+        )
+
+
 class TrendAnalysisSkill(Skill):
     """Skill for time-series trend analysis."""
 

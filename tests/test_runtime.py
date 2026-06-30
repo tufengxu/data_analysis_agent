@@ -13,6 +13,7 @@ from data_analysis_agent.skills.loader import DeclarativeSkill
 
 _PROD_TOOLS = {
     "read_file",
+    "data_profile",
     "python_analysis",
     "nl_query",
     "visualization",
@@ -67,6 +68,27 @@ def test_analysis_paths_reach_python_tool(tmp_path):
     py_tool = runtime.loop.registry.get_tool("python_analysis")
     assert py_tool is not None
     assert tmp_path.resolve() in py_tool.allowed_paths
+
+
+def test_analysis_paths_reach_data_profile_tool(tmp_path):
+    runtime = AgentRuntime.from_config(
+        _eval_config(), client=_FakeClient(), analysis_paths=[tmp_path]
+    )
+    profile_tool = runtime.loop.registry.get_tool("data_profile")
+    assert profile_tool is not None
+    assert tmp_path.resolve() in profile_tool.allowed_paths
+
+
+def test_data_profile_auto_allowed_in_plan_mode():
+    from data_analysis_agent.runtime import build_permission_engine
+    from data_analysis_agent.security.permissions import PermissionBehavior
+
+    engine = build_permission_engine(replace(AgentConfig(), permission_mode="plan"))
+    assert engine is not None
+    # read-only discovery is allowed even in plan mode (like read_file)
+    assert engine.check("data_profile", {}).behavior == PermissionBehavior.ALLOW
+    # write/execute tools stay denied in plan mode
+    assert engine.check("python_analysis", {}).behavior == PermissionBehavior.DENY
 
 
 def test_build_registry_full_set_standalone():

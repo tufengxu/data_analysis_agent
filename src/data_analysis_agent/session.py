@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import time
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -43,11 +43,16 @@ class AgentSession:
         store: MessageStore | None = None,
         meta: SessionMeta | None = None,
         trajectory_logger: TrajectoryLogger | None = None,
+        memory_adjudicator: Callable[[bool], None] | None = None,
     ) -> None:
         self.loop = loop
         self.store = store
         self.meta = meta or SessionMeta()
         self.trajectory_logger = trajectory_logger
+        # Resolves the previous turn's surfaced metrics (rephrase-gated
+        # light-confirm). A side concern like telemetry: optional, never breaks
+        # the turn, and keeps AgentLoop free of any memory dependency.
+        self.memory_adjudicator = memory_adjudicator
         self._history: list[Message] = []
         self._last_turn_monotonic: float | None = None
 
@@ -91,16 +96,26 @@ class AgentSession:
         """
         if not self.meta.title:
             self.meta.title = user_input[:80]
+        # A fast negating follow-up flags the PREVIOUS turn as unsatisfactory.
+        # Computed once: it gates BOTH the implicit-rephrase trajectory signal
+        # and the memory light-confirm adjudication below.
+        last_turn_at = self._last_turn_monotonic
+        is_rephrase = last_turn_at is not None and looks_like_rephrase(
+            user_input, time.monotonic() - last_turn_at
+        )
+        had_previous_turn = last_turn_at is not None
+        # Adjudicate the previous turn's surfaced metrics now that we can tell
+        # whether the user accepted it (no rephrase) or pushed back. First turn
+        # has nothing pending, so it is skipped.
+        if self.memory_adjudicator is not None and had_previous_turn:
+            with contextlib.suppress(Exception):
+                self.memory_adjudicator(not is_rephrase)
         logger = self.trajectory_logger
         if logger is not None:
             # All telemetry interaction is suppressed: it is a side channel and
             # must never break the turn (symmetric with the per-event guard below).
             with contextlib.suppress(Exception):
-                # Implicit rephrase: a fast negating follow-up flags the PREVIOUS
-                # turn as unsatisfactory (collected only; consumed under review).
-                if self._last_turn_monotonic is not None and looks_like_rephrase(
-                    user_input, time.monotonic() - self._last_turn_monotonic
-                ):
+                if is_rephrase:
                     logger.attach_feedback(FeedbackRecord(kind="rephrase", implicit=True))
                 logger.begin_turn(user_input)
         stream = self.loop.run(user_input, history=self._history)
@@ -118,4 +133,6 @@ class AgentSession:
             if logger is not None:
                 with contextlib.suppress(Exception):
                     logger.end_turn()
-                self._last_turn_monotonic = time.monotonic()
+            # Always stamped (not only under telemetry): both the rephrase
+            # signal and the memory adjudication next turn depend on it.
+            self._last_turn_monotonic = time.monotonic()

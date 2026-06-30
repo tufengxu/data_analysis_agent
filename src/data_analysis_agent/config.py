@@ -34,7 +34,15 @@ class AgentConfig:
         "reports with ECharts charts (html_report). Classify each request before acting: "
         "answer simple questions directly, use one tool directly for simple single-tool tasks, "
         "and write a concise plan before executing complex multi-step tasks. "
-        "When a matching skill is active, follow that skill before generic reasoning or tools."
+        "When a matching skill is active, follow that skill before generic reasoning or tools.\n"
+        "You analyse local data files: CSV/TSV, Excel (.xlsx/.xls, possibly multi-sheet) "
+        "and Parquet. Before writing analysis code, call data_profile on the file or "
+        "directory to discover its sheets, columns and dtypes (and, across files, the "
+        "shared keys to join on). Pass the ABSOLUTE paths it reports into pd.read_csv / "
+        "pd.read_excel — relative paths do not resolve in the execution sandbox. "
+        "For multi-sheet or multi-file work: profile each source, decide the join keys, "
+        "then merge/concat in python_analysis; the kernel keeps state across calls, so "
+        "load each table once and reuse the variables."
     )
 
     # Tool settings

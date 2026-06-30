@@ -82,7 +82,21 @@ class MemoryStore:
         return [e for _, e in scored[:top_k]]
 
     def touch(self, kind: str, key: str) -> None:
-        """Mark an entry used; a metric auto-confirms after enough uses."""
+        """Mark an entry as surfaced (recency only).
+
+        Surfacing in the prompt is NOT acceptance, so it must not advance
+        confirmation (that was the old false-trust bug). The rephrase-gated
+        light-confirm runs through ``note_accepted_use`` instead.
+        """
+        entry = self._index.get((kind, key))
+        if entry is None:
+            return
+        entry.last_used_at = _utc_now()
+        self._rewrite()
+
+    def note_accepted_use(self, kind: str, key: str) -> None:
+        """Record a use the user did NOT push back on; a metric auto-confirms
+        after enough such accepted uses (ADR 0004 light-confirm, rephrase-gated)."""
         entry = self._index.get((kind, key))
         if entry is None:
             return

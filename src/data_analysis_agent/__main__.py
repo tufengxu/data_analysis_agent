@@ -7,6 +7,7 @@ import json
 import logging
 import signal
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -47,6 +48,37 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("data_analysis_agent")
+
+
+def parse_memory_command(text: str) -> tuple[str, str, str] | None:
+    """Parse a /define or /pref capture command; None if it is not one.
+
+    /define <name>=<definition> -> ("metric_definition", name, definition)
+    /pref <preference text>     -> ("analysis_pref", <derived key>, text)
+    Malformed commands return None so the caller can print usage.
+    """
+    s = text.strip()
+    if s == "/define" or s.startswith("/define "):
+        name, sep, definition = s[len("/define") :].strip().partition("=")
+        name, definition = name.strip(), definition.strip()
+        if sep and name and definition:
+            return ("metric_definition", name, definition)
+        return None
+    if s == "/pref" or s.startswith("/pref "):
+        body = s[len("/pref") :].strip()
+        return ("analysis_pref", body[:32], body) if body else None
+    return None
+
+
+def apply_memory_command(injector: Any, parsed: tuple[str, str, str]) -> str:
+    """Write a parsed memory command via the injector; return a user message."""
+    kind, key, content = parsed
+    if kind == "metric_definition":
+        # Explicit user definition: trusted immediately (confirmed).
+        injector.remember_metric(key, content, confirmed=True)
+        return f"已记录口径定义:{key} = {content}"
+    injector.remember_pref(content, key=key)
+    return f"已记录分析偏好:{content}"
 
 
 class _ShutdownManager:
@@ -120,10 +152,14 @@ def build_runtime(
     config: AgentConfig,
     persist_path: str | Path | None,
     approval_handler: ConsoleApprovalHandler | None = None,
+    analysis_paths: Sequence[str | Path] | None = None,
 ) -> AgentRuntime:
     """Assemble the runtime via the composition root, then surface resume info."""
     runtime = AgentRuntime.from_config(
-        config, persist_path=persist_path, approval_handler=approval_handler
+        config,
+        persist_path=persist_path,
+        approval_handler=approval_handler,
+        analysis_paths=analysis_paths,
     )
     if persist_path and len(runtime.session.history) > 0:
         console.print(f"[dim]已恢复会话：{len(runtime.session.history)} 条历史消息[/dim]")
@@ -230,11 +266,14 @@ async def run_single(
     query: str,
     config: AgentConfig,
     persist_path: str | Path | None,
+    analysis_paths: Sequence[str | Path] | None = None,
 ) -> None:
     """One-shot mode: a single query in a fresh (or resumed) session."""
     _shutdown_manager.install()
     approval = ConsoleApprovalHandler(console)
-    runtime = build_runtime(config, persist_path, approval_handler=approval)
+    runtime = build_runtime(
+        config, persist_path, approval_handler=approval, analysis_paths=analysis_paths
+    )
     try:
         await run_turn(runtime, query, _shutdown_manager, approval)
     finally:
@@ -244,6 +283,7 @@ async def run_single(
 async def run_interactive(
     config: AgentConfig,
     persist_path: str | Path | None,
+    analysis_paths: Sequence[str | Path] | None = None,
 ) -> None:
     """Interactive mode: one session, one kernel, one event loop for all turns."""
     _shutdown_manager.install()
@@ -256,7 +296,9 @@ async def run_interactive(
         )
     )
     approval = ConsoleApprovalHandler(console)
-    runtime = build_runtime(config, persist_path, approval_handler=approval)
+    runtime = build_runtime(
+        config, persist_path, approval_handler=approval, analysis_paths=analysis_paths
+    )
     try:
         while not _shutdown_manager.is_shutdown_requested():
             try:
@@ -275,6 +317,17 @@ async def run_interactive(
                     "[dim]已记录反馈,谢谢。[/dim]" if ok else "[dim]当前无可反馈的轮次。[/dim]"
                 )
                 continue
+            if query.startswith(("/define", "/pref")):
+                parsed = parse_memory_command(query)
+                if parsed is None:
+                    console.print("[dim]用法:/define 名称=定义  或  /pref 偏好描述[/dim]")
+                elif runtime.memory_injector is None:
+                    console.print("[dim]记忆未启用(enable_memory=False)。[/dim]")
+                else:
+                    console.print(
+                        f"[dim]{apply_memory_command(runtime.memory_injector, parsed)}[/dim]"
+                    )
+                continue
             await run_turn(runtime, query, _shutdown_manager, approval)
             console.print()
     finally:
@@ -292,6 +345,16 @@ def main() -> None:
     parser.add_argument("--max-turns", type=int, help="Maximum turns")
     parser.add_argument("--interactive", "-i", action="store_true", help="Interactive mode")
     parser.add_argument("--persist", "-p", help="Path to JSONL message store")
+    parser.add_argument(
+        "--path",
+        action="append",
+        metavar="DIR_OR_FILE",
+        help=(
+            "Authorize a data file or directory for analysis (repeatable). "
+            "Lets data_profile/python_analysis read absolute paths there; "
+            "defaults to the current working directory."
+        ),
+    )
     args = parser.parse_args()
 
     config = AgentConfig.from_file(args.config) if args.config else AgentConfig.from_env()
@@ -308,11 +371,13 @@ def main() -> None:
         )
         sys.exit(1)
 
+    analysis_paths: list[str | Path] | None = list(args.path) if args.path else None
+
     try:
         if args.interactive or not args.query:
-            asyncio.run(run_interactive(config, args.persist))
+            asyncio.run(run_interactive(config, args.persist, analysis_paths))
         else:
-            asyncio.run(run_single(args.query, config, args.persist))
+            asyncio.run(run_single(args.query, config, args.persist, analysis_paths))
     finally:
         _shutdown_manager.restore()
 

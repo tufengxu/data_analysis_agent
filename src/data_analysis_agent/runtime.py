@@ -33,6 +33,7 @@ from .skills.base import Skill
 from .skills.builtin import (
     CorrelationAnalysisSkill,
     DescriptiveAnalysisSkill,
+    JointAnalysisSkill,
     ReportGenerationSkill,
     TrendAnalysisSkill,
 )
@@ -40,6 +41,7 @@ from .skills.loader import load_skills
 from .skills.registry import SkillRegistry
 from .telemetry import TrajectoryLogger
 from .tools import (
+    DataProfileTool,
     FileReadTool,
     HtmlReportTool,
     NlQueryTool,
@@ -50,7 +52,7 @@ from .tools import (
 from .tools.retrieve_result import RetrieveResultTool
 
 # Tools that never mutate state; auto-allowed in default permission mode.
-READ_ONLY_TOOLS = ("read_file", "nl_query", "retrieve_result")
+READ_ONLY_TOOLS = ("read_file", "data_profile", "nl_query", "retrieve_result")
 
 
 def build_message_store(persist_path: str | Path | None) -> MessageStore | None:
@@ -69,12 +71,14 @@ def build_registry(
     registry = ToolRegistry()
     sampling_config = config.sampling_config() if config else None
     echarts_src = config.echarts_src if config else None
+    paths = list(analysis_paths) if analysis_paths else None
     registry.register(FileReadTool())
+    registry.register(DataProfileTool(allowed_paths=paths))
     registry.register(
         PythonAnalysisTool(
             sampling_config=sampling_config,
             kernel=kernel,
-            allowed_paths=list(analysis_paths) if analysis_paths else None,
+            allowed_paths=paths,
         )
     )
     registry.register(NlQueryTool())
@@ -103,6 +107,7 @@ def build_skill_registry(
     skills.register(CorrelationAnalysisSkill())
     skills.register(TrendAnalysisSkill())
     skills.register(ReportGenerationSkill())
+    skills.register(JointAnalysisSkill())
     if skills_dir is not None:
         for declarative in load_skills(skills_dir, statuses=("active",)):
             skills.register(declarative)
@@ -150,18 +155,20 @@ def build_permission_engine(config: AgentConfig) -> PermissionEngine | None:
     return engine
 
 
-def _build_memory_callbacks(
-    config: AgentConfig,
-) -> tuple[Any, Any]:
-    """(memory_injector, memory_recorder) or (None, None) when memory is off."""
+def _build_memory_injector(config: AgentConfig) -> MemoryInjector | None:
+    """The MemoryInjector when memory is on, else None.
+
+    Returning the object (not just its callbacks) lets the composition root
+    expose it on AgentRuntime so the CLI's /define and /pref commands write
+    through the SAME store the read-side injection uses (in-session visible).
+    """
     if not config.enable_memory:
-        return None, None
-    injector = MemoryInjector(
+        return None
+    return MemoryInjector(
         ProfileStore(config.memory_dir()),
         MemoryStore(config.memory_dir()),
         budget_tokens=config.memory_inject_budget_tokens,
     )
-    return injector.render, injector.record_tool
 
 
 @dataclass
@@ -172,6 +179,7 @@ class AgentRuntime:
     loop: AgentLoop
     kernel: KernelManager | None
     artifacts_dir: Path
+    memory_injector: MemoryInjector | None = None
 
     async def shutdown(self) -> None:
         if self.kernel is not None:
@@ -219,7 +227,9 @@ class AgentRuntime:
             enable_collapse=True,
         )
         store = build_message_store(persist_path)
-        memory_injector, memory_recorder = _build_memory_callbacks(config)
+        injector = _build_memory_injector(config)
+        memory_injector = injector.render if injector is not None else None
+        memory_recorder = injector.record_tool if injector is not None else None
 
         loop = AgentLoop(
             loop_config,
@@ -241,8 +251,16 @@ class AgentRuntime:
             session = AgentSession.resume(loop, store)
         else:
             session = AgentSession(loop, store)
+        if injector is not None:
+            session.memory_adjudicator = injector.adjudicate
         if config.enable_telemetry:
             session.trajectory_logger = TrajectoryLogger(
                 config.trajectories_dir(), session.meta.session_id
             )
-        return cls(session=session, loop=loop, kernel=kernel, artifacts_dir=artifacts_dir)
+        return cls(
+            session=session,
+            loop=loop,
+            kernel=kernel,
+            artifacts_dir=artifacts_dir,
+            memory_injector=injector,
+        )
