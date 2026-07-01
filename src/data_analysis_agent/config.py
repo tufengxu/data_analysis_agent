@@ -84,6 +84,11 @@ class AgentConfig:
     enable_memory: bool = True
     memory_inject_budget_tokens: int = 1500
 
+    # Trajectory tool-input capture: record the "success process" (tool params /
+    # code skeletons) so the synthesizer can learn reusable recipes. Off → only
+    # tool name / duration / result_chars are recorded (privacy-preserving).
+    enable_trajectory_inputs: bool = True
+
     def artifacts_dir(self, persist_path: str | Path | None = None) -> Path:
         """Directory for user-facing artifacts (charts); follows persist_path."""
         import tempfile
