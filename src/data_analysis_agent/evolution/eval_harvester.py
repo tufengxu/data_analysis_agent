@@ -18,7 +18,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from .synthesizer import is_eligible
+from .synthesizer import is_eligible, load_corpus
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +128,43 @@ def harvest_eval_tasks(
     return written
 
 
+def register_harvest_eval_cli(subparsers: Any) -> None:
+    """Register the ``harvest-eval`` subcommand on the evolution CLI."""
+    p = subparsers.add_parser("harvest-eval", help="轨迹 → eval 任务 + 冻结 fixture(解冷启动)")
+    p.add_argument(
+        "--data-search-path",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="查找被引用数据文件的目录(可重复,通常即 agent 的 analysis_paths)",
+    )
+    p.set_defaults(func=_cmd_harvest_eval)
+
+
+def _cmd_harvest_eval(args: Any) -> int:
+    from ..config import AgentConfig
+
+    config = AgentConfig.from_env()
+    if not args.data_search_path:
+        print("--data-search-path 至少一个(通常即 agent 的 analysis_paths)。")
+        return 1
+    corpus = load_corpus(config.trajectories_dir())
+    eval_dir = config.eval_tasks_dir()
+    written = harvest_eval_tasks(
+        corpus, eval_dir, eval_dir / _FIXTURES_SUBDIR, args.data_search_path
+    )
+    print(f"收割 {len(written)} 个 eval 任务 → {eval_dir}")
+    for p in written:
+        print(f"  {p.name}")
+    if not written:
+        print("  没有产出(轨迹不足 / 无可冻结数据文件 / 全部被跳过)。")
+    return 0
+
+
 __all__ = [
     "derive_tool_count_max",
     "harvest_eval_tasks",
+    "register_harvest_eval_cli",
     "resolve_fixture",
     "rewrite_input_paths",
     "stable_task_id",

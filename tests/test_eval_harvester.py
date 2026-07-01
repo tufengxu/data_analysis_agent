@@ -116,3 +116,28 @@ def test_harvest_skips_missing_referenced_file(tmp_path, caplog):
     written = harvest_eval_tasks(corpus, eval_dir, eval_dir / "fixtures", [tmp_path / "nope"])
     assert written == []
     assert any("sales.csv" in r.message for r in caplog.records)
+
+
+def test_harvest_eval_cli_writes_tasks(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    traj = tmp_path / "daa" / "trajectories"
+    data_root = tmp_path / "data"
+    _make_csv(data_root / "sales.csv")
+    _write_turn(traj, "t1", "销售分析 sales.csv", ("sales.csv",))
+
+    from data_analysis_agent.evolution.__main__ import main
+
+    rc = main(["harvest-eval", "--data-search-path", str(data_root)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "收割" in out
+    assert (tmp_path / "daa" / "eval_tasks").is_dir()
+
+
+def test_harvest_eval_cli_requires_data_search_path(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    from data_analysis_agent.evolution.__main__ import main
+
+    rc = main(["harvest-eval"])
+    assert rc == 1
+    assert "--data-search-path" in capsys.readouterr().out

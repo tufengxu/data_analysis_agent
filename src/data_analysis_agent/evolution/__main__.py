@@ -167,7 +167,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="DataAnalysisAgent evolution pipeline")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -185,7 +185,15 @@ def main() -> int:
     except ImportError:
         pass
 
-    args = parser.parse_args()
+    # 'harvest-eval' is registered by the eval_harvester if available.
+    try:
+        from .eval_harvester import register_harvest_eval_cli
+
+        register_harvest_eval_cli(sub)
+    except ImportError:
+        pass
+
+    args = parser.parse_args(argv)
     func: Callable[[argparse.Namespace], int] = args.func
     return func(args)
 
