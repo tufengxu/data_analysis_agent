@@ -141,3 +141,33 @@ def test_harvest_eval_cli_requires_data_search_path(tmp_path, monkeypatch, capsy
     rc = main(["harvest-eval"])
     assert rc == 1
     assert "--data-search-path" in capsys.readouterr().out
+
+
+def test_evaluator_reads_multiple_dirs(tmp_path):
+    from data_analysis_agent.evolution.evaluator import SkillEvaluator
+
+    dir_a = tmp_path / "a"
+    dir_b = tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    (dir_a / "ta.json").write_text(
+        json.dumps({"task_id": "ta", "input": "销售 x", "assertions": {}}), encoding="utf-8"
+    )
+    (dir_b / "tb.json").write_text(
+        json.dumps({"task_id": "tb", "input": "销售 y", "assertions": {}}), encoding="utf-8"
+    )
+
+    def run_fn(task, skill):
+        from data_analysis_agent.evolution.evaluator import EvalRun
+
+        return EvalRun(tool_call_count=2, has_error=False, final_text="ok")
+
+    ev = SkillEvaluator([dir_a, dir_b], tmp_path / "skills", run_fn, min_samples=1)
+
+    class FakeSkill:
+        name = "sales"
+        keywords = ["销售"]
+
+    # _all_tasks is the multi-dir aggregation surface
+    tasks = ev._all_tasks()
+    assert {t.task_id for t in tasks} == {"ta", "tb"}

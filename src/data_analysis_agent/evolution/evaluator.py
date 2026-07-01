@@ -157,19 +157,31 @@ class SkillEvaluator:
 
     def __init__(
         self,
-        eval_tasks_dir: str | Path,
+        eval_tasks_dir: str | Path | list[str | Path],
         skills_dir: str | Path,
         run_fn: RunFn,
         *,
         min_samples: int = MIN_SAMPLES,
     ) -> None:
-        self.tasks_dir = Path(eval_tasks_dir)
+        dirs = eval_tasks_dir if isinstance(eval_tasks_dir, (list, tuple)) else [eval_tasks_dir]
+        self.tasks_dirs: list[Path] = [Path(d) for d in dirs]
         self.skills_dir = Path(skills_dir)
         self.run_fn = run_fn
         self.min_samples = min_samples
 
+    def _all_tasks(self) -> list[EvalTask]:
+        """Load + dedup tasks across all configured dirs (by task_id)."""
+        tasks: list[EvalTask] = []
+        seen: set[str] = set()
+        for d in self.tasks_dirs:
+            for t in load_eval_tasks(d):
+                if t.task_id not in seen:
+                    seen.add(t.task_id)
+                    tasks.append(t)
+        return tasks
+
     def evaluate(self, skill: Skill) -> dict[str, Any]:
-        tasks = relevant_tasks(skill, load_eval_tasks(self.tasks_dir))
+        tasks = relevant_tasks(skill, self._all_tasks())
         pairs: list[tuple[EvalResult, EvalResult]] = []
         for task in tasks:
             control = self._run(task, None)
@@ -295,7 +307,7 @@ def _cmd_evaluate(args: Any) -> int:
     eval_dir = Path(__file__).resolve().parent.parent.parent.parent / "examples" / "eval_tasks"
     client = AnthropicApiClient(api_key=config.api_key, model=config.model)
     run_fn = make_agent_run_fn(client, allowed_paths=[eval_dir], config=config)
-    evaluator = SkillEvaluator(eval_dir, config.skills_dir(), run_fn)
+    evaluator = SkillEvaluator([eval_dir, config.eval_tasks_dir()], config.skills_dir(), run_fn)
 
     candidates = load_skills(config.skills_dir(), statuses=("candidate",))
     if not candidates:
