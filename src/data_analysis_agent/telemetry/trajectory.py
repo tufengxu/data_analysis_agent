@@ -8,12 +8,14 @@ configured trajectories dir; one TurnRecord per send().
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from ..context.compression import estimate_tokens
 from ..events import (
@@ -29,6 +31,72 @@ from ..jsonl_store import JsonlStore
 from .feedback import FeedbackRecord
 
 _DIGEST_CHARS = 2000
+_INPUT_DIGEST_CHARS = 1000
+_DATA_SUFFIXES = (".csv", ".tsv", ".xlsx", ".xls", ".parquet")
+
+
+def _walk_values(obj: Any) -> Iterator[Any]:
+    """Yield scalar values from nested dict/list structures."""
+    if isinstance(obj, dict):
+        for v in obj.values():
+            yield from _walk_values(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _walk_values(v)
+    else:
+        yield obj
+
+
+def _extract_referenced_files(params: dict[str, Any]) -> tuple[str, ...]:
+    """Best-effort basenames of data files named in tool params (suffix match).
+
+    I/O-free: only string inspection. Existence is the harvester's job.
+    Over-collection is harmless (an unused fixture costs little).
+    """
+    found: list[str] = []
+    for value in _walk_values(params):
+        low = str(value).lower()
+        if any(low.endswith(suf) for suf in _DATA_SUFFIXES):
+            name = Path(str(value)).name
+            if name and name not in found:
+                found.append(name)
+    return tuple(found)
+
+
+def _digest_tool_input(
+    params: dict[str, Any],
+    *,
+    analysis_paths: Sequence[str | Path] | None = None,
+    cap: int = _INPUT_DIGEST_CHARS,
+    home: Path | None = None,
+) -> str:
+    """JSON-serialized params with absolute paths stripped to <path:basename>.
+
+    HOME prefix is always stripped; analysis_paths (if given) stripped too.
+    """
+    if home is None:
+        home = Path.home()
+    prefixes = [str(home), *(str(p) for p in (analysis_paths or ()))]
+
+    def scrub(v: Any) -> Any:
+        if isinstance(v, str):
+            for prefix in prefixes:
+                if prefix and v.startswith(prefix):
+                    return f"<path:{Path(v).name}>"
+            return v
+        if isinstance(v, dict):
+            return {k: scrub(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [scrub(x) for x in v]
+        return v
+
+    try:
+        text = json.dumps(scrub(params), ensure_ascii=False)
+    except (TypeError, ValueError):
+        text = str(params)
+    if len(text) > cap:
+        return text[:cap] + "…(truncated)"
+    return text
 
 
 def _utc_now() -> str:
@@ -43,6 +111,8 @@ class ToolCallRecord:
     is_error: bool
     duration_ms: int
     result_chars: int
+    input_digest: str = ""  # desensitized param JSON — the "how" (for reflection)
+    referenced_files: tuple[str, ...] = ()  # basenames of data files touched (for harvesting)
 
 
 @dataclass
@@ -72,10 +142,16 @@ class TrajectoryLogger:
         session_id: str,
         *,
         monotonic: Callable[[], float] = time.monotonic,
+        enable_inputs: bool = True,
+        analysis_paths: Sequence[str | Path] | None = None,
+        home: Path | None = None,
     ) -> None:
         self.dir = Path(trajectories_dir)
         self.session_id = session_id
         self._monotonic = monotonic
+        self._enable_inputs = enable_inputs
+        self._analysis_paths = list(analysis_paths) if analysis_paths else []
+        self._home = home
         self._store = JsonlStore(self.dir / f"{session_id}.jsonl")
         self.path = self._store.path
         self._last_turn_id: str | None = None
@@ -88,7 +164,7 @@ class TrajectoryLogger:
         self._ts_start = ""
         self._active_skill: str | None = None
         self._tool_calls: list[ToolCallRecord] = []
-        self._tool_starts: dict[str, tuple[str, float]] = {}
+        self._tool_starts: dict[str, tuple[str, float, dict[str, Any]]] = {}
         self._model_turns = 0
         self._terminal = "UNKNOWN"
         self._final_text = ""
@@ -119,17 +195,30 @@ class TrajectoryLogger:
             self._input_tokens += event.input_tokens
             self._output_tokens += event.output_tokens
         elif isinstance(event, ToolUseEvent):
-            self._tool_starts[event.tool_use_id] = (event.tool_name, self._monotonic())
-        elif isinstance(event, ToolResultEvent):
-            name, started = self._tool_starts.pop(
-                event.tool_use_id, (event.tool_name, self._monotonic())
+            self._tool_starts[event.tool_use_id] = (
+                event.tool_name,
+                self._monotonic(),
+                dict(event.parameters),
             )
+        elif isinstance(event, ToolResultEvent):
+            name, started, params = self._tool_starts.pop(
+                event.tool_use_id, (event.tool_name, self._monotonic(), {})
+            )
+            if self._enable_inputs:
+                digest = _digest_tool_input(
+                    params, analysis_paths=self._analysis_paths, home=self._home
+                )
+                refs = _extract_referenced_files(params)
+            else:
+                digest, refs = "", ()
             self._tool_calls.append(
                 ToolCallRecord(
                     name=name or event.tool_name,
                     is_error=event.is_error,
                     duration_ms=int(max(0.0, self._monotonic() - started) * 1000),
                     result_chars=len(event.content),
+                    input_digest=digest,
+                    referenced_files=refs,
                 )
             )
         elif isinstance(event, StreamTextEvent):
