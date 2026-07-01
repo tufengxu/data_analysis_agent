@@ -32,8 +32,12 @@ def derive_tool_count_max(source_count: int) -> int:
 
 
 def stable_task_id(input_text: str, referenced: tuple[str, ...]) -> str:
-    """Deterministic id over (input, referenced files) → re-harvest is idempotent."""
-    payload = f"{input_text}\x1f{'|'.join(referenced)}".encode()
+    """Deterministic id over (input, referenced files) → re-harvest is idempotent.
+
+    referenced is sorted before hashing so the id is invariant to permutation
+    (spec §6.3 重跑幂等 — protects against dict-key-order drift on re-serialization).
+    """
+    payload = f"{input_text}\x1f{'|'.join(sorted(referenced))}".encode()
     return hashlib.sha1(payload).hexdigest()[:12]
 
 
@@ -43,12 +47,24 @@ def rewrite_input_paths(input_text: str, basename: str) -> str:
 
 
 def resolve_fixture(basename: str, data_search_paths: list[Path]) -> Path | None:
-    """First search-path hit for basename, else None (caller logs/skips)."""
-    for root in data_search_paths:
-        candidate = Path(root) / basename
-        if candidate.is_file():
-            return candidate
-    return None
+    """First search-path hit for basename, else None (caller logs/skips).
+
+    Spec §8: if the basename resolves in ≥2 search paths, log a warning about
+    the ambiguity then return the first match (deterministic).
+    """
+    matches = [
+        Path(root) / basename for root in data_search_paths if (Path(root) / basename).is_file()
+    ]
+    if not matches:
+        return None
+    if len(matches) >= 2:
+        logger.warning(
+            "harvest: %s ambiguous across %d search paths; using %s",
+            basename,
+            len(matches),
+            matches[0],
+        )
+    return matches[0]
 
 
 def _turn_referenced_files(turn: dict[str, Any]) -> list[str]:
@@ -102,25 +118,39 @@ def harvest_eval_tasks(
             )
             continue
         dst = fixtures_dir / basename
-        if not dst.exists():
-            dst.write_bytes(src.read_bytes())
         input_text = str(turn.get("user_input", ""))
         task_id = stable_task_id(input_text, tuple(refs))
         if task_id in seen_ids:
             continue
+        try:
+            if not dst.exists():
+                dst.write_bytes(src.read_bytes())  # noqa: S606 — local fixture freeze
+            task = {
+                "task_id": task_id,
+                "input": rewrite_input_paths(input_text, basename),
+                "dataset_fixture": f"{_FIXTURES_SUBDIR}/{basename}",
+                "assertions": {
+                    "no_error_results": True,
+                    "min_tool_calls": 1,
+                    "tool_call_count_max": derive_tool_count_max(_turn_tool_count(turn)),
+                },
+            }
+            path = eval_dir / f"{task_id}.json"
+            path.write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            # §8 robustness: a single-task freeze/write failure must not abort
+            # the batch. If the fixture COPY failed, the task is useless (eval
+            # would fail without the fixture) → skip + log, mirroring the
+            # "file not found → skip" behavior above.
+            logger.warning(
+                "harvest: failed to freeze task %s (%s); skipping. error: %s",
+                basename,
+                task_id,
+                exc,
+            )
+            seen_ids.discard(task_id)
+            continue
         seen_ids.add(task_id)
-        task = {
-            "task_id": task_id,
-            "input": rewrite_input_paths(input_text, basename),
-            "dataset_fixture": f"{_FIXTURES_SUBDIR}/{basename}",
-            "assertions": {
-                "no_error_results": True,
-                "min_tool_calls": 1,
-                "tool_call_count_max": derive_tool_count_max(_turn_tool_count(turn)),
-            },
-        }
-        path = eval_dir / f"{task_id}.json"
-        path.write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
         written.append(path)
         if len(written) >= max_tasks:
             logger.info("harvest: reached max_tasks=%d; stopping", max_tasks)

@@ -1,9 +1,12 @@
 import json
+import logging
+from pathlib import Path
 
 from data_analysis_agent.config import AgentConfig
 from data_analysis_agent.evolution.eval_harvester import (
     derive_tool_count_max,
     harvest_eval_tasks,
+    resolve_fixture,
     rewrite_input_paths,
     stable_task_id,
 )
@@ -171,3 +174,105 @@ def test_evaluator_reads_multiple_dirs(tmp_path):
     # _all_tasks is the multi-dir aggregation surface
     tasks = ev._all_tasks()
     assert {t.task_id for t in tasks} == {"ta", "tb"}
+
+
+# --- §8 robustness / §6.3 idempotency hardening (final-fix) ---
+
+
+def test_harvest_skips_task_when_fixture_copy_fails(tmp_path, monkeypatch, caplog):
+    """Fix 1: a single OSError during fixture copy must skip THAT task only."""
+    traj = tmp_path / "traj"
+    data_root = tmp_path / "data"
+    # two distinct fixtures so the two turns resolve to different basenames
+    _make_csv(data_root / "sales.csv")
+    _make_csv(data_root / "orders.csv")
+    _write_turn(traj, "t_good", "销售分析 sales.csv", ("sales.csv",))
+    _write_turn(traj, "t_bad", "订单分析 orders.csv", ("orders.csv",))
+
+    corpus = load_corpus(traj)
+    eval_dir = tmp_path / "eval"
+    fixtures_dir = eval_dir / "fixtures"
+    fixtures_dir.mkdir(parents=True, exist_ok=True)
+
+    real_write_bytes = Path.write_bytes
+
+    def flaky_write_bytes(self, data):
+        if self.name == "orders.csv":
+            raise OSError("simulated disk full on fixture copy")
+        return real_write_bytes(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", flaky_write_bytes)
+    caplog.set_level(logging.WARNING, logger="data_analysis_agent.evolution.eval_harvester")
+
+    written = harvest_eval_tasks(corpus, eval_dir, fixtures_dir, [data_root])
+
+    # the bad task is skipped; the good task survives
+    names = {p.name for p in written}
+    assert written, "at least the good task must survive"
+    bad_id = stable_task_id("订单分析 orders.csv", ("orders.csv",))
+    assert f"{bad_id}.json" not in names, "bad fixture task must not be written"
+    # a warning mentions the failing task / basename
+    assert any("orders.csv" in r.message or "t_bad" in r.message for r in caplog.records), (
+        f"expected warning naming the failed task; got {[r.message for r in caplog.records]}"
+    )
+
+
+def test_harvest_skips_task_when_json_write_fails(tmp_path, monkeypatch, caplog):
+    """Fix 1: a JSON-write failure must skip THAT task only, no exception escapes."""
+    traj = tmp_path / "traj"
+    data_root = tmp_path / "data"
+    _make_csv(data_root / "sales.csv")
+    _make_csv(data_root / "orders.csv")
+    _write_turn(traj, "t_good", "销售分析 sales.csv", ("sales.csv",))
+    _write_turn(traj, "t_bad", "订单分析 orders.csv", ("orders.csv",))
+
+    corpus = load_corpus(traj)
+    eval_dir = tmp_path / "eval"
+
+    real_write_text = Path.write_text
+
+    bad_id = stable_task_id("订单分析 orders.csv", ("orders.csv",))
+    bad_name = f"{bad_id}.json"
+
+    def flaky_write_text(self, data, *args, **kwargs):
+        if self.name == bad_name:
+            raise OSError("simulated permission denied on eval JSON write")
+        return real_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    caplog.set_level(logging.WARNING, logger="data_analysis_agent.evolution.eval_harvester")
+
+    written = harvest_eval_tasks(corpus, eval_dir, eval_dir / "fixtures", [data_root])
+
+    names = {p.name for p in written}
+    assert bad_name not in names, "task whose JSON write failed must not be in written"
+    assert written, "the other task must survive"
+    assert any(bad_id in r.message or "t_bad" in r.message for r in caplog.records), (
+        f"expected warning for failed JSON write; got {[r.message for r in caplog.records]}"
+    )
+
+
+def test_resolve_fixture_logs_ambiguity(tmp_path, caplog):
+    """Fix 2: basename resolved in ≥2 search paths → warn + return first."""
+    from pathlib import Path as _Path
+
+    dir_a = tmp_path / "a"
+    dir_b = tmp_path / "b"
+    _make_csv(dir_a / "sales.csv")
+    _make_csv(dir_b / "sales.csv")
+
+    caplog.set_level(logging.WARNING, logger="data_analysis_agent.evolution.eval_harvester")
+    result = resolve_fixture("sales.csv", [_Path(dir_a), _Path(dir_b)])
+
+    assert result is not None
+    assert result.parent == dir_a, "must return the FIRST match"
+    assert any("sales.csv" in r.message and "ambiguous" in r.message for r in caplog.records), (
+        f"expected ambiguity warning; got {[r.message for r in caplog.records]}"
+    )
+
+
+def test_stable_task_id_invariant_to_referenced_order():
+    """Fix 3: id must be identical for any permutation of referenced files."""
+    refs_a = ("sales.csv", "orders.csv", "regions.csv")
+    refs_b = ("regions.csv", "orders.csv", "sales.csv")
+    assert stable_task_id("分析", refs_a) == stable_task_id("分析", refs_b)
