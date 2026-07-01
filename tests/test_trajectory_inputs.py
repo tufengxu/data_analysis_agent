@@ -1,8 +1,10 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from data_analysis_agent.config import AgentConfig
 from data_analysis_agent.events import ToolResultEvent, ToolUseEvent
+from data_analysis_agent.runtime import AgentRuntime
 from data_analysis_agent.telemetry.trajectory import (
     TrajectoryLogger,
     _digest_tool_input,
@@ -62,3 +64,27 @@ def test_enable_inputs_false_omits_fields(tmp_path):
     assert tc.referenced_files == ()
     # other fields still captured
     assert tc.name == "data_profile" and tc.result_chars == 2
+
+
+class _FakeClient:
+    model = "dummy"
+
+
+def test_runtime_threads_enable_inputs_false(tmp_path, monkeypatch):
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    cfg = replace(
+        AgentConfig(),
+        api_key="x",
+        persistent_kernel=False,
+        enable_telemetry=True,
+        enable_trajectory_inputs=False,
+    )
+    rt = AgentRuntime.from_config(cfg, client=_FakeClient())
+    assert rt.session.trajectory_logger._enable_inputs is False
+
+
+def test_runtime_threads_enable_inputs_true_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    cfg = replace(AgentConfig(), api_key="x", persistent_kernel=False, enable_telemetry=True)
+    rt = AgentRuntime.from_config(cfg, client=_FakeClient())
+    assert rt.session.trajectory_logger._enable_inputs is True

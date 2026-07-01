@@ -255,7 +255,10 @@ class AgentRuntime:
             session.memory_adjudicator = injector.adjudicate
         if config.enable_telemetry:
             session.trajectory_logger = TrajectoryLogger(
-                config.trajectories_dir(), session.meta.session_id
+                config.trajectories_dir(),
+                session.meta.session_id,
+                enable_inputs=config.enable_trajectory_inputs,
+                analysis_paths=analysis_paths,
             )
         return cls(
             session=session,
