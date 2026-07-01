@@ -123,6 +123,10 @@ class AgentConfig:
     def skills_dir(self) -> Path:
         return self._evolution_subdir("skills")
 
+    def eval_tasks_dir(self) -> Path:
+        """Root for harvested eval tasks + fixtures (~/.daa/eval_tasks)."""
+        return self._evolution_subdir("eval_tasks")
+
     def _evolution_subdir(self, name: str) -> Path:
         """Return a ~/.daa/<name> path, creating it best-effort.
 
