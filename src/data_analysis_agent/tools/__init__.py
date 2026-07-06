@@ -7,6 +7,9 @@ from .html_report import HtmlReportTool
 from .nl_query import NlQueryTool
 from .python_exec import PythonAnalysisTool
 from .registry import ToolRegistry
+from .report_context import ReportContextTool
+from .report_contract import ReportContractTool
+from .report_need import ReportNeedTool
 from .visualization import VisualizationTool
 
 __all__ = [
@@ -17,6 +20,9 @@ __all__ = [
     "NlQueryTool",
     "PermissionResult",
     "PythonAnalysisTool",
+    "ReportContractTool",
+    "ReportContextTool",
+    "ReportNeedTool",
     "Tool",
     "ToolRegistry",
     "ToolResult",

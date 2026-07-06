@@ -123,17 +123,22 @@ class ReportGenerationSkill(Skill):
     def instructions(self) -> str:
         return (
             "When generating an HTML analysis report:\n"
-            "1. Run the analysis first: load data and compute every statistic, "
-            "aggregate and series with python_analysis (kernel state persists "
-            "across calls — reuse variables instead of reloading)\n"
-            "2. Print chart-ready data as compact JSON (e.g. lists of category "
-            "labels and values) so you can copy exact numbers into chart options\n"
-            "3. Design the report: an executive summary plus one section per "
-            "finding; every key claim should be backed by a chart or table\n"
-            "4. Call html_report ONCE with all sections. Each chart is a full "
-            "ECharts `option` object (set textStyle, axis names and series names "
-            "in the user's language); keep tables small (top-N rows)\n"
-            "5. Tell the user the report file path returned by the tool\n"
+            "1. Run report_need FIRST to parse the request into EXPLICIT vs IMPLICIT "
+            "requirements; mark inferred requirements as inferred and carry that "
+            "mapping into report_contract — never treat inferences as explicit facts\n"
+            "2. Run data_profile, then report_context to capture Data Context + Process "
+            "Context (candidate columns, business grain, tool steps, assumptions)\n"
+            "3. Run report_contract to canonicalize the Report Contract BEFORE heavy "
+            "analysis; it populates traceability refs + field_sources and surfaces "
+            "missing_context (clarify or assume before rendering)\n"
+            "4. Run the analysis: compute every statistic, aggregate and series with "
+            "python_analysis (kernel state persists across calls — reuse variables "
+            "instead of reloading); print chart-ready data as compact JSON so you can "
+            "copy exact numbers into chart options\n"
+            "5. Call html_report ONCE with an executive summary plus one section per "
+            "finding; each chart is a full ECharts `option` object (set textStyle, axis "
+            "names and series names in the user's language); keep tables small (top-N "
+            "rows); tell the user the report file path returned by the tool\n"
         )
 
     @property
@@ -148,11 +153,40 @@ class ReportGenerationSkill(Skill):
             "可视化报告",
             "汇报",
             "h5",
+            "日报",
+            "周报",
+            "月报",
+            "复盘",
+            "漏斗",
+            "同期群",
+            "留存",
+            "异常",
+            "风险",
+            "数据质量",
+            "KPI",
+            "daily",
+            "weekly",
+            "funnel",
+            "cohort",
+            "risk",
+            "anomaly",
+            "data quality",
+            "diagnostic",
         ]
 
     @property
     def allowed_tools(self) -> list[str]:
-        return ["read_file", "python_analysis", "retrieve_result", "html_report"]
+        return [
+            "read_file",
+            "data_profile",
+            "report_need",
+            "report_context",
+            "report_contract",
+            "python_analysis",
+            "retrieve_result",
+            "visualization",
+            "html_report",
+        ]
 
     async def execute(self, query: str, context: dict[str, Any]) -> SkillResult:
         return SkillResult(

@@ -19,6 +19,9 @@ _PROD_TOOLS = {
     "visualization",
     "retrieve_result",
     "html_report",
+    "report_need",
+    "report_context",
+    "report_contract",
 }
 
 

@@ -46,13 +46,24 @@ from .tools import (
     HtmlReportTool,
     NlQueryTool,
     PythonAnalysisTool,
+    ReportContextTool,
+    ReportContractTool,
+    ReportNeedTool,
     ToolRegistry,
     VisualizationTool,
 )
 from .tools.retrieve_result import RetrieveResultTool
 
 # Tools that never mutate state; auto-allowed in default permission mode.
-READ_ONLY_TOOLS = ("read_file", "data_profile", "nl_query", "retrieve_result")
+READ_ONLY_TOOLS = (
+    "read_file",
+    "data_profile",
+    "nl_query",
+    "retrieve_result",
+    "report_need",
+    "report_context",
+    "report_contract",
+)
 
 
 def build_message_store(persist_path: str | Path | None) -> MessageStore | None:
@@ -86,6 +97,9 @@ def build_registry(
     registry.register(RetrieveResultTool(result_store=result_store))
     report_kwargs = {"echarts_src": echarts_src} if echarts_src else {}
     registry.register(HtmlReportTool(artifact_dir=artifact_dir, **report_kwargs))
+    registry.register(ReportNeedTool())
+    registry.register(ReportContextTool())
+    registry.register(ReportContractTool())
 
     if config:
         for pattern in config.deny_patterns:
