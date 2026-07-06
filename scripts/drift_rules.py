@@ -137,6 +137,36 @@ IMPORT_RULES: list[dict[str, object]] = [
             "data_analysis_agent.session",
         ],
     },
+    # reporting 是纯 stdlib 领域层(报告契约/文档/QA);tools 可单向依赖它,
+    # 其本身不得反向耦合任何内部包。不能改用 catch-all `forbid:["data_analysis_agent"]`,
+    # 否则会误伤包内 `from .model import ...`(解析为 ...reporting.model,命中前缀)。
+    # 见 ADR 0009。
+    {
+        "who": "data_analysis_agent.reporting",
+        "forbid": [
+            "data_analysis_agent.agent_loop",
+            "data_analysis_agent.protocol",
+            "data_analysis_agent.runtime",
+            "data_analysis_agent.evolution",
+            "data_analysis_agent.telemetry",
+            "data_analysis_agent.memory",
+            "data_analysis_agent.tools",
+            "data_analysis_agent.skills",
+            "data_analysis_agent.session",
+            "data_analysis_agent.kernel",
+            "data_analysis_agent.context",
+            "data_analysis_agent.security",
+            "data_analysis_agent.sampling",
+            "data_analysis_agent.persistence",
+            "data_analysis_agent.state_machine",
+            "data_analysis_agent.events",
+            "data_analysis_agent.config",
+            "data_analysis_agent.recovery",
+            "data_analysis_agent.jsonl_store",
+            "data_analysis_agent.artifacts",
+            "data_analysis_agent.__main__",
+        ],
+    },
 ]
 
 # Documents scanned for dead repo-path references.

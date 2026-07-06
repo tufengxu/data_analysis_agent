@@ -36,6 +36,7 @@ harness 决定「做多少」。本文件是架构的单一事实源;下方 mani
 - `recovery.py` ✗→ `agent_loop`/`runtime`/`session`(被 agent_loop 依赖的恢复策略接缝,不得反向耦合)
 - 任何核心模块 ✗→ `evolution`(evolution 是顶层离线 sink,依赖向下,不被 core 依赖)
 - `evolution/synthesizer.py` ✗→ `protocol`/`agent_loop`(反思经 reflect_fn 注入;仅离线 CLI 入口可依赖 `protocol`)
+- `reporting/*` ✗→ 任何 `data_analysis_agent.*`(纯 stdlib 领域层,被 tools 单向依赖;见 ADR 0009)
 
 ## 模块 manifest
 
@@ -90,6 +91,13 @@ src/data_analysis_agent/memory/model.py = "MemoryEntry(三类文本记忆)+ Data
 src/data_analysis_agent/memory/store.py = "MemoryStore:JSONL 文本记忆,关键词+子串检索;touch 仅记最近用,note_accepted_use 驱动口径轻确认"
 src/data_analysis_agent/memory/profiler.py = "数据集画像确定性生成 + 列指纹分层失效(fresh/stale/invalid)"
 src/data_analysis_agent/memory/injector.py = "MemoryInjector:render 注入 + record_tool 在线画像 + remember_metric/pref 显式写入 + adjudicate(rephrase-gated 轻确认)"
+src/data_analysis_agent/reporting/model.py = "报告领域层(Wave1):UserNeed/DataContext/ProcessContext/TraceLink + 显式/隐式需求分离 + 通用 to_dict/from_dict(纯 stdlib,ADR 0009)"
+src/data_analysis_agent/reporting/requirement_parser.py = "报告领域层(Wave1):确定性需求解析(raw_request → UserNeed,显式/隐式分离,CJK 启发式,无 LLM)"
+src/data_analysis_agent/reporting/context_collector.py = "报告领域层(Wave1):data_profile→DataContext、工具事件→ProcessContext(纯 dict 输入,sensitive_mode 隐私降级)"
+src/data_analysis_agent/reporting/traceability.py = "报告领域层(Wave1):契约字段溯源映射(需求/数据/过程 → TraceLink,中读解释,无依据不产 link)"
+src/data_analysis_agent/reporting/contract.py = "报告领域层(Wave2):ReportContract/MetricSpec/EvidenceRef/ChartSpec/ReportDocument 契约与文档模型 + 封闭词表枚举(纯 stdlib,ADR 0009)"
+src/data_analysis_agent/reporting/chart_rules.py = "报告领域层(Wave2):图族选择 + 数据充分性 + fallback(MIN_TREND/MIN_SCATTER,确定性,无 LLM)"
+src/data_analysis_agent/reporting/qa.py = "报告领域层(Wave2):确定性 QA(readiness 三态 + blocker/high/medium/info 规则,无 LLM,ADR 0009)"
 ```
 
 <!-- manifest:end -->
