@@ -48,6 +48,8 @@ class EvalRun:
     tool_call_count: int
     has_error: bool
     final_text: str
+    tools_used: tuple[str, ...] = ()  # Wave 7: tool names from ToolResultEvent
+    artifact_paths: tuple[str, ...] = ()  # Wave 7: persisted artifact paths
 
 
 @dataclass
@@ -100,6 +102,16 @@ def check_assertions(run: EvalRun, assertions: dict[str, Any]) -> tuple[bool, li
     pattern = assertions.get("final_text_regex")
     if isinstance(pattern, str) and not re.search(pattern, run.final_text):
         failures.append(f"final text did not match /{pattern}/")
+    required = assertions.get("required_tools")
+    if isinstance(required, str):  # 裸字符串守卫(同 final_text_contains)
+        required = [required]
+    if isinstance(required, list):
+        for tool in required:
+            if tool not in run.tools_used:
+                failures.append(f"required tool missing: {tool}")
+    # artifact_produced:truthy → 要求至少一个 artifact 路径;falsy → 不检查(可选断言惯例)
+    if assertions.get("artifact_produced") and not run.artifact_paths:
+        failures.append("no artifact produced")
     return (not failures, failures)
 
 
@@ -274,14 +286,25 @@ def make_agent_run_fn(client: Any, *, allowed_paths: list[str | Path], config: A
             tool_calls = 0
             has_error = False
             final = ""
+            tools_used: list[str] = []
+            artifact_paths: list[str] = []
             try:
                 async for event in runtime.loop.run(effective_input):
                     if isinstance(event, ToolResultEvent):
                         tool_calls += 1
                         has_error = has_error or event.is_error
+                        if event.tool_name:
+                            tools_used.append(event.tool_name)
+                        artifact_paths.extend(event.artifacts)
                     elif isinstance(event, CompleteEvent):
                         final = event.final_text
-                return EvalRun(tool_calls, has_error, final)
+                return EvalRun(
+                    tool_calls,
+                    has_error,
+                    final,
+                    tuple(tools_used),
+                    tuple(artifact_paths),
+                )
             finally:
                 await runtime.shutdown()  # release the per-task runtime (kernel, etc.)
 

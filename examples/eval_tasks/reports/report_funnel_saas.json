@@ -1,0 +1,17 @@
+{
+  "task_id": "report_funnel_saas",
+  "input": "基于此订阅(SaaS)数据生成漏斗报告框架(如数据非漏斗形,给出框架即可)。数据见 fixtures/sales.csv,生成 html 报告。",
+  "dataset_fixture": "fixtures/sales.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 2,
+    "tool_call_count_max": 12,
+    "required_tools": [
+      "html_report"
+    ],
+    "artifact_produced": true,
+    "final_text_contains": [
+      "报告"
+    ]
+  }
+}

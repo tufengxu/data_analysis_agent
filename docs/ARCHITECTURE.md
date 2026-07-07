@@ -80,6 +80,7 @@ src/data_analysis_agent/evolution/synthesizer.py = "轨迹筛选/聚类 → refl
 src/data_analysis_agent/evolution/memory_miner.py = "轨迹 → L1 领域记忆抽取(注入式 extract_fn;metric 写未确认,(kind,key) 去重;离线 sink)"
 src/data_analysis_agent/evolution/evaluator.py = "fixture 重跑 + A/B + 最小样本门槛 + promote/rollback(断言验证方法非数值)"
 src/data_analysis_agent/evolution/eval_harvester.py = "轨迹 → EvalTask JSON + fixture 冻结(解决 eval 冷启动;断言验证方法非数值;离线 sink)"
+src/data_analysis_agent/evolution/eval_taxonomy.py = "eval 失败分类学:区分 code/tool 失败 vs 报告质量失败(spec §8 Wave 7)"
 src/data_analysis_agent/evolution/__main__.py = "进化离线 CLI:synthesize/mine-memory/list/evaluate;llm_reflect/llm_extract 默认实现"
 src/data_analysis_agent/security/permissions.py = "deny-first 权限引擎(4 层防御)"
 src/data_analysis_agent/security/tool_gate.py = "ToolGate:单次工具授权决策(decide 引擎策略 / validate 自检校验),agent_loop 的测试接缝"

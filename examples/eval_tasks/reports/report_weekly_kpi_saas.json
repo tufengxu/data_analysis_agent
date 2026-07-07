@@ -1,0 +1,17 @@
+{
+  "task_id": "report_weekly_kpi_saas",
+  "input": "本周订阅(SaaS)周报,业务回顾。数据见 fixtures/sales.csv,生成 html 报告。",
+  "dataset_fixture": "fixtures/sales.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 2,
+    "tool_call_count_max": 12,
+    "required_tools": [
+      "html_report"
+    ],
+    "artifact_produced": true,
+    "final_text_contains": [
+      "报告"
+    ]
+  }
+}
