@@ -165,6 +165,36 @@ IMPORT_RULES: list[dict[str, object]] = [
             "data_analysis_agent.jsonl_store",
             "data_analysis_agent.artifacts",
             "data_analysis_agent.__main__",
+            "data_analysis_agent.web",
+        ],
+    },
+    # web 是表现层(FastAPI workbench),消费 reporting 域层 + fastapi/starlette/pydantic;
+    # 禁依赖一切运行时/工具/技能/进化/记忆等内部包(同 reporting 的纯方向,但 web 在
+    # reporting 之上,故 reporting 不在 web 的禁入表)。见 Wave 8 plan。
+    {
+        "who": "data_analysis_agent.web",
+        "forbid": [
+            "data_analysis_agent.agent_loop",
+            "data_analysis_agent.protocol",
+            "data_analysis_agent.runtime",
+            "data_analysis_agent.evolution",
+            "data_analysis_agent.telemetry",
+            "data_analysis_agent.memory",
+            "data_analysis_agent.tools",
+            "data_analysis_agent.skills",
+            "data_analysis_agent.session",
+            "data_analysis_agent.kernel",
+            "data_analysis_agent.context",
+            "data_analysis_agent.security",
+            "data_analysis_agent.sampling",
+            "data_analysis_agent.persistence",
+            "data_analysis_agent.state_machine",
+            "data_analysis_agent.events",
+            "data_analysis_agent.config",
+            "data_analysis_agent.recovery",
+            "data_analysis_agent.jsonl_store",
+            "data_analysis_agent.artifacts",
+            "data_analysis_agent.__main__",
         ],
     },
 ]

@@ -37,6 +37,7 @@ harness 决定「做多少」。本文件是架构的单一事实源;下方 mani
 - 任何核心模块 ✗→ `evolution`(evolution 是顶层离线 sink,依赖向下,不被 core 依赖)
 - `evolution/synthesizer.py` ✗→ `protocol`/`agent_loop`(反思经 reflect_fn 注入;仅离线 CLI 入口可依赖 `protocol`)
 - `reporting/*` ✗→ 任何 `data_analysis_agent.*`(纯 stdlib 领域层,被 tools 单向依赖;见 ADR 0009)
+- `web/*` ✗→ 一切内部包(仅允许 `reporting`+ fastapi/starlette/pydantic;见 Wave 8 plan)
 
 ## 模块 manifest
 
@@ -104,6 +105,9 @@ src/data_analysis_agent/reporting/contract.py = "报告领域层(Wave2):ReportCo
 src/data_analysis_agent/reporting/chart_rules.py = "报告领域层(Wave2):图族选择 + 数据充分性 + fallback(MIN_TREND/MIN_SCATTER,确定性,无 LLM)"
 src/data_analysis_agent/reporting/qa.py = "报告领域层(Wave2):确定性 QA(readiness 三态 + blocker/high/medium/info 规则,无 LLM,ADR 0009)"
 src/data_analysis_agent/reporting/templates.py = "报告领域层(Wave6):8 报告类型 curated 模板(section-role spine + 默认图族 + 必备 caveat)+ 确定性 select/match_template"
+src/data_analysis_agent/web/app.py = "Web Workbench(Wave8 MVP):FastAPI app + API 端点(need/context/contract/qa/template)+ artifact 安全预览(消费 reporting 纯函数)"
+src/data_analysis_agent/web/schemas.py = "Web Workbench(Wave8):Pydantic 请求模型"
+src/data_analysis_agent/web/__main__.py = "Web Workbench(Wave8):uvicorn 启动入口(data-agent-web)"
 ```
 
 <!-- manifest:end -->

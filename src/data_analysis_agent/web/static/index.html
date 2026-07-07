@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Report Workbench</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif;
+        background: #f5f7fa;
+        color: #2c3e50;
+        line-height: 1.6;
+        padding: 20px;
+      }
+      h1 {
+        margin-bottom: 16px;
+      }
+      .panel {
+        background: #fff;
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      }
+      .panel h2 {
+        font-size: 16px;
+        margin-bottom: 8px;
+      }
+      textarea,
+      input[type="text"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #d0d7de;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 13px;
+      }
+      button {
+        margin-top: 8px;
+        padding: 6px 16px;
+        background: #4a7bd0;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      button:hover {
+        background: #3a6bc0;
+      }
+      pre {
+        margin-top: 8px;
+        background: #f6f8fa;
+        padding: 12px;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      .readiness {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .r-ready {
+        background: #e8f7ef;
+        color: #1e8449;
+      }
+      .r-needs_review {
+        background: #fef5e7;
+        color: #b9770e;
+      }
+      .r-draft {
+        background: #fdedec;
+        color: #c0392b;
+      }
+      iframe {
+        width: 100%;
+        height: 400px;
+        border: 1px solid #d0d7de;
+        border-radius: 4px;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>DataAnalysisAgent · Report Workbench</h1>
+
+    <div class="panel">
+      <h2>1. 报告需求(report_need)</h2>
+      <textarea
+        id="need-input"
+        rows="2"
+        placeholder="给我看看上周销售日报,要能给领导看"
+      ></textarea>
+      <button onclick="callNeed()">解析需求</button>
+      <pre id="need-output"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>2. 数据上下文(report_context)</h2>
+      <textarea
+        id="ctx-input"
+        rows="4"
+        placeholder='{"kind":"file","path":"x.csv","tables":[{"columns":[{"name":"date","dtype":"datetime64"},{"name":"amount","dtype":"float64"}]}]}'
+      ></textarea>
+      <button onclick="callContext()">采集上下文</button>
+      <pre id="ctx-output"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>3. 报告契约(report_contract)</h2>
+      <input
+        type="text"
+        id="contract-q"
+        placeholder="分析问题(如:上周销售日报)"
+      />
+      <button onclick="callContract()">建契约</button>
+      <pre id="contract-output"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>4. 报告 QA</h2>
+      <textarea
+        id="qa-input"
+        rows="6"
+        placeholder='{"title":"x","data_scope":"s","contract":{"question":"q","explicit_requirement_refs":["u1"]}}'
+      ></textarea>
+      <label
+        ><input type="checkbox" id="qa-artifact" checked /> artifact
+        已产出</label
+      >
+      <button onclick="callQA()">跑 QA</button>
+      <pre id="qa-output"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>5. 模板匹配</h2>
+      <input type="text" id="tpl-input" placeholder="上周销售日报" />
+      <button onclick="callTemplate()">匹配模板</button>
+      <pre id="tpl-output"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>6. Artifact 预览</h2>
+      <input type="text" id="art-input" placeholder="report_xxx.html" />
+      <button onclick="loadArtifact()">预览</button>
+      <iframe id="art-frame" sandbox="allow-scripts"></iframe>
+    </div>
+
+    <script>
+      async function post(url, body) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        return res.json();
+      }
+      async function callNeed() {
+        const r = await post("/api/report/need", {
+          raw_request: document.getElementById("need-input").value,
+        });
+        document.getElementById("need-output").textContent = JSON.stringify(
+          r,
+          null,
+          2,
+        );
+      }
+      async function callContext() {
+        const profile = JSON.parse(document.getElementById("ctx-input").value);
+        const r = await post("/api/report/context", { profile });
+        document.getElementById("ctx-output").textContent = JSON.stringify(
+          r,
+          null,
+          2,
+        );
+      }
+      async function callContract() {
+        const r = await post("/api/report/contract", {
+          question: document.getElementById("contract-q").value,
+        });
+        document.getElementById("contract-output").textContent = JSON.stringify(
+          r,
+          null,
+          2,
+        );
+      }
+      async function callQA() {
+        const doc = JSON.parse(document.getElementById("qa-input").value);
+        const artifact = document.getElementById("qa-artifact").checked;
+        const r = await post("/api/qa", {
+          document: doc,
+          artifact_exists: artifact,
+        });
+        const el = document.getElementById("qa-output");
+        el.textContent = "";
+        const badgeEl = document.createElement("span");
+        badgeEl.className = "readiness r-" + r.readiness;
+        badgeEl.textContent = r.readiness;
+        el.append(
+          badgeEl,
+          " " +
+            r.findings.length +
+            " findings\n\n" +
+            JSON.stringify(
+              r.findings.map((f) => f.severity + ": " + f.code),
+              null,
+              2,
+            ),
+        );
+      }
+      async function callTemplate() {
+        const text = document.getElementById("tpl-input").value;
+        const res = await fetch(
+          "/api/template?text=" + encodeURIComponent(text),
+        );
+        const r = await res.json();
+        document.getElementById("tpl-output").textContent = JSON.stringify(
+          r,
+          null,
+          2,
+        );
+      }
+      function loadArtifact() {
+        const name = document.getElementById("art-input").value;
+        document.getElementById("art-frame").src =
+          "/artifacts/" + encodeURIComponent(name);
+      }
+    </script>
+  </body>
+</html>

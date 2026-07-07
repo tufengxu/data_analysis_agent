@@ -30,9 +30,14 @@ dev = [
     "ruff>=0.6.0",
     "mypy>=1.10.0",
 ]
+web = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
+]
 
 [project.scripts]
 data-agent = "data_analysis_agent.__main__:main"
+data-agent-web = "data_analysis_agent.web.__main__:main"
 
 [tool.ruff]
 line-length = 100
