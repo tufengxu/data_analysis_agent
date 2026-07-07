@@ -81,3 +81,22 @@ def test_template_roundtrip():
     for rt, tpl in TEMPLATES.items():
         rebuilt = ReportTemplate.from_dict(tpl.to_dict())
         assert rebuilt == tpl, f"{rt.value} 往返不等"
+
+
+# ----------------------------- 域 overlay(迭代扩展) -----------------------------
+
+
+def test_apply_overlay_adds_caveats():
+    from data_analysis_agent.reporting.overlays import apply_overlay
+
+    tpl = TEMPLATES[ReportType.DAILY_KPI]
+    patched = apply_overlay(tpl, "retail")
+    assert "inventory_turnover" in patched.required_caveats
+    assert "inventory_turnover" not in tpl.required_caveats  # 原模板不可变
+
+
+def test_apply_overlay_no_match_returns_original():
+    from data_analysis_agent.reporting.overlays import apply_overlay
+
+    tpl = TEMPLATES[ReportType.DAILY_KPI]
+    assert apply_overlay(tpl, "bogus_domain") is tpl  # 无 overlay → 原对象

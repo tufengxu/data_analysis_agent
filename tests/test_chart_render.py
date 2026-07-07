@@ -318,6 +318,80 @@ def test_path_containment_rejects_escape(tmp_path: Path):
     )
 
 
+# ----------------------------- heatmap + funnel(迭代扩展) -----------------------------
+
+
+async def test_heatmap_option(tmp_path: Path):
+    tool = _tool(tmp_path)
+    result = await tool.call(
+        {
+            "block_id": "c1",
+            "family": "heatmap",
+            "data": {
+                "x_labels": ["W1", "W2", "W3"],
+                "y_labels": ["A", "B"],
+                "values": [[0, 0, 0.8], [1, 1, 0.5], [2, 0, 0.9]],
+            },
+        }
+    )
+    opt = result.metadata["chart_option"]
+    assert opt["xAxis"]["data"] == ["W1", "W2", "W3"]
+    assert opt["yAxis"]["data"] == ["A", "B"]
+    assert opt["series"][0]["type"] == "heatmap"
+    assert opt["visualMap"]["min"] == 0.5
+    assert opt["visualMap"]["max"] == 0.9
+    assert result.metadata["chart_meta"]["n_points"] == 3
+
+
+async def test_funnel_option(tmp_path: Path):
+    tool = _tool(tmp_path)
+    result = await tool.call(
+        {
+            "block_id": "c1",
+            "family": "funnel",
+            "data": {"stages": [{"name": "访问", "value": 1000}, {"name": "注册", "value": 500}]},
+        }
+    )
+    opt = result.metadata["chart_option"]
+    assert opt["series"][0]["type"] == "funnel"
+    assert len(opt["series"][0]["data"]) == 2
+    assert result.metadata["chart_meta"]["n_points"] == 2
+
+
+def test_heatmap_validates_data_shape(tmp_path: Path):
+    tool = _tool(tmp_path)
+    assert not tool.validate_input(
+        {"block_id": "c1", "family": "heatmap", "data": {"x_labels": []}}
+    ).valid
+    assert not tool.validate_input(
+        {
+            "block_id": "c1",
+            "family": "heatmap",
+            "data": {"x_labels": ["a"], "y_labels": ["b"], "values": [[0, 0]]},
+        }
+    ).valid  # triple not pair
+    assert tool.validate_input(
+        {
+            "block_id": "c1",
+            "family": "heatmap",
+            "data": {"x_labels": ["a"], "y_labels": ["b"], "values": [[0, 0, 0.5]]},
+        }
+    ).valid
+
+
+def test_funnel_validates_data_shape(tmp_path: Path):
+    tool = _tool(tmp_path)
+    assert not tool.validate_input(
+        {"block_id": "c1", "family": "funnel", "data": {"stages": []}}
+    ).valid
+    assert not tool.validate_input(
+        {"block_id": "c1", "family": "funnel", "data": {"stages": [{"name": "a"}]}}
+    ).valid  # missing value
+    assert tool.validate_input(
+        {"block_id": "c1", "family": "funnel", "data": {"stages": [{"name": "a", "value": 1}]}}
+    ).valid
+
+
 async def test_call_time_is_relative_to_defense(tmp_path: Path):
     """直接 call()(绕过 validate)用逃逸 file_name → is_relative_to 兜底返 is_error。"""
     tool = _tool(tmp_path)

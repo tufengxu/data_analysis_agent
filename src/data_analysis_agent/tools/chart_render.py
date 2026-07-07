@@ -35,6 +35,8 @@ _SUPPORTED_FAMILIES = (
     "grouped_bar",
     "stacked_bar",
     "scatter",
+    "heatmap",
+    "funnel",
 )
 
 # Windows 设备名(镜像 html_report 的 _WINDOWS_RESERVED_NAMES;复制以避免动 html_report)。
@@ -63,9 +65,11 @@ class ChartRenderTool(Tool):
         return (
             "Render a structured chart request into an ECharts option + JSON artifact, "
             "WITHOUT writing free-form Python. Pass family (line/bar/grouped_bar/"
-            "stacked_bar/scatter) + data ({labels, series:[{name, values}]} for line/bar; "
-            "{points:[[x,y],...]} for scatter). Returns the chart_option (feed it into "
-            "html_report's charts map under the same block_id) + chart metadata "
+            "stacked_bar/scatter/heatmap/funnel) + data ({labels, series:[{name, values}]} "
+            "for line/bar; {points:[[x,y],...]} for scatter; "
+            "{x_labels, y_labels, values:[[x,y,val],...]} for heatmap; "
+            "{stages:[{name, value}]} for funnel). Returns the chart_option "
+            "(feed it into html_report's charts map under the same block_id) + chart metadata "
             "(family, data_sufficient, n_points, fallback_family). Read the data with "
             "python_analysis first so numbers are kernel-exact."
         )
@@ -142,6 +146,30 @@ class ChartRenderTool(Tool):
             for i, p in enumerate(points):
                 if not isinstance(p, (list, tuple)) or len(p) != 2:
                     return ValidationResult.fail(f"data.points[{i}] must be a [x, y] pair")
+        elif family == "heatmap":
+            x_labels = data.get("x_labels")
+            if not isinstance(x_labels, list) or not x_labels:
+                return ValidationResult.fail("heatmap requires a non-empty data.x_labels array")
+            y_labels = data.get("y_labels")
+            if not isinstance(y_labels, list) or not y_labels:
+                return ValidationResult.fail("heatmap requires a non-empty data.y_labels array")
+            values = data.get("values")
+            if not isinstance(values, list) or not values:
+                return ValidationResult.fail(
+                    "heatmap requires a non-empty data.values array of [x, y, value]"
+                )
+            for i, v in enumerate(values):
+                if not isinstance(v, (list, tuple)) or len(v) != 3:
+                    return ValidationResult.fail(f"data.values[{i}] must be a [x, y, value] triple")
+        elif family == "funnel":
+            stages = data.get("stages")
+            if not isinstance(stages, list) or not stages:
+                return ValidationResult.fail(
+                    "funnel requires a non-empty data.stages array of {name, value}"
+                )
+            for i, s in enumerate(stages):
+                if not isinstance(s, dict) or "name" not in s or "value" not in s:
+                    return ValidationResult.fail(f"data.stages[{i}] must have name and value")
         else:
             labels = data.get("labels")
             if not isinstance(labels, list) or not labels:
@@ -185,6 +213,12 @@ class ChartRenderTool(Tool):
         if cf is ChartFamily.SCATTER:
             n_points = None
             n_observations = len(data["points"])
+        elif cf is ChartFamily.HEATMAP:
+            n_points = len(data["values"])
+            n_observations = None
+        elif cf is ChartFamily.FUNNEL:
+            n_points = len(data["stages"])
+            n_observations = None
         else:
             n_points = len(data["labels"])
             n_observations = None
@@ -255,6 +289,25 @@ class ChartRenderTool(Tool):
             option["xAxis"] = x_axis
             option["yAxis"] = y_axis
             option["series"] = [{"type": "scatter", "data": data["points"]}]
+            return option
+        if cf is ChartFamily.HEATMAP:
+            option["tooltip"] = {"position": "top"}
+            option["xAxis"] = {"type": "category", "data": data["x_labels"]}
+            option["yAxis"] = {"type": "category", "data": data["y_labels"]}
+            vals = [v[2] for v in data["values"] if isinstance(v[2], (int, float))]
+            option["visualMap"] = {
+                "min": min(vals) if vals else 0,
+                "max": max(vals) if vals else 1,
+                "calculable": True,
+                "orient": "horizontal",
+                "left": "center",
+                "bottom": 0,
+            }
+            option["series"] = [{"type": "heatmap", "data": data["values"]}]
+            return option
+        if cf is ChartFamily.FUNNEL:
+            option["tooltip"] = {"trigger": "item", "formatter": "{b}: {c}"}
+            option["series"] = [{"type": "funnel", "data": data["stages"]}]
             return option
         # line / bar / grouped_bar / stacked_bar —— 共享 category xAxis
         x_axis = {"type": "category", "data": data["labels"]}

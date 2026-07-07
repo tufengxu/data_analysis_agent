@@ -105,6 +105,7 @@ src/data_analysis_agent/reporting/contract.py = "报告领域层(Wave2):ReportCo
 src/data_analysis_agent/reporting/chart_rules.py = "报告领域层(Wave2):图族选择 + 数据充分性 + fallback(MIN_TREND/MIN_SCATTER,确定性,无 LLM)"
 src/data_analysis_agent/reporting/qa.py = "报告领域层(Wave2):确定性 QA(readiness 三态 + blocker/high/medium/info 规则,无 LLM,ADR 0009)"
 src/data_analysis_agent/reporting/templates.py = "报告领域层(Wave6):8 报告类型 curated 模板(section-role spine + 默认图族 + 必备 caveat)+ 确定性 select/match_template"
+src/data_analysis_agent/reporting/overlays.py = "报告领域层:域 overlay(retail/saas/finance/... 微调模板 required_caveats,确定性)"
 src/data_analysis_agent/web/app.py = "Web Workbench(Wave8 MVP):FastAPI app + API 端点(need/context/contract/qa/template)+ artifact 安全预览(消费 reporting 纯函数)"
 src/data_analysis_agent/web/schemas.py = "Web Workbench(Wave8):Pydantic 请求模型"
 src/data_analysis_agent/web/__main__.py = "Web Workbench(Wave8):uvicorn 启动入口(data-agent-web)"
