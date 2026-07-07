@@ -20,12 +20,21 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from string import Template
 from typing import Any
+
+from data_analysis_agent.reporting.contract import (
+    BlockRole,
+    ChartSpec,
+    ReportBlock,
+    ReportDocument,
+)
+from data_analysis_agent.reporting.qa import Readiness, Severity, run_qa
 
 from .base import CanUseToolFn, Tool, ToolResult, ValidationResult
 
@@ -130,6 +139,107 @@ _CHARTS_SCRIPT = Template(
 $render_calls
 })();
 </script>"""
+)
+
+
+_PAGE_V2 = Template(
+    """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$title</title>
+$echarts_tag
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: #f5f7fa; color: #2c3e50; line-height: 1.7;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+header { margin: 16px 0 12px; }
+h1 { font-size: 26px; letter-spacing: .5px; }
+.subtitle { color: #5d6d7e; margin-top: 4px; font-size: 15px; }
+.meta { color: #95a5a6; font-size: 12px; margin-top: 8px; }
+.qa-badge {
+  display: inline-block; padding: 4px 12px; border-radius: 12px;
+  font-size: 13px; font-weight: 600; margin-top: 8px;
+}
+.qa-ready { background: #e8f7ef; color: #1e8449; }
+.qa-needs-review { background: #fef5e7; color: #b9770e; }
+.qa-draft { background: #fdedec; color: #c0392b; }
+.qa-banner { padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+.qa-banner.draft { background: #fdedec; color: #c0392b; border-left: 4px solid #c0392b; }
+.qa-banner.needs-review { background: #fef5e7; color: #b9770e; border-left: 4px solid #b9770e; }
+.card {
+  background: #fff; border-radius: 10px; padding: 20px 24px; margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(30, 40, 60, .08);
+}
+.card h2 {
+  font-size: 18px; margin-bottom: 10px; padding-left: 10px;
+  border-left: 4px solid #4a7bd0;
+}
+.summary { border-left: 4px solid #2eaa76; }
+.summary h2 { border-left: none; padding-left: 0; color: #2eaa76; }
+.caveat { border-left: 4px solid #e67e22; }
+.caveat h2 { border-left: none; padding-left: 0; color: #e67e22; }
+.recommendation { border-left: 4px solid #8e44ad; }
+.recommendation h2 { border-left: none; padding-left: 0; color: #8e44ad; }
+.card p { margin: 8px 0; word-break: break-word; }
+.kpi-strip { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.kpi-card { flex: 1 1 140px; background: #f0f4f8; border-radius: 8px; padding: 12px 16px; }
+.kpi-pair { display: flex; justify-content: space-between; font-size: 13px; gap: 8px; }
+.kpi-k { color: #5d6d7e; }
+.kpi-v { color: #2c3e50; font-weight: 600; }
+.chart { width: 100%; margin-top: 12px; }
+.chart-caption { text-align: center; color: #7f8c8d; font-size: 13px; margin-top: 6px; }
+.chart-fallback { color: #c0392b; text-align: center; padding: 24px 0; }
+.chart-placeholder {
+  background: #f8f9fa; border: 1px dashed #bdc3c7; border-radius: 8px;
+  padding: 16px; color: #7f8c8d; margin-top: 12px;
+}
+.interpretation {
+  background: #f4f6f8; border-radius: 6px; padding: 8px 12px; margin-top: 8px;
+  font-size: 14px;
+}
+.caveat-inline { color: #b9770e; font-size: 13px; margin-top: 6px; }
+.tbl-wrap { overflow-x: auto; margin-top: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { border: 1px solid #e3e8ee; padding: 6px 10px; text-align: left; }
+th { background: #f0f4f8; font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+.tbl-note { color: #95a5a6; font-size: 12px; margin-top: 4px; }
+footer { text-align: center; color: #b0b8c0; font-size: 12px; margin-top: 32px; }
+@media (max-width: 600px) {
+  .wrap { padding: 12px 8px 32px; }
+  .card { padding: 14px 14px; }
+  h1 { font-size: 21px; }
+  .kpi-strip { flex-direction: column; }
+}
+@media print {
+  body { background: #fff; }
+  .card { box-shadow: none; border: 1px solid #e3e8ee; break-inside: avoid; }
+  .qa-banner { border: 1px solid; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>$title</h1>
+$subtitle_html
+<p class="meta">$meta_line</p>
+$qa_badge
+</header>
+$qa_banner
+$blocks_html
+<footer>DataAnalysisAgent · ReportDocument v2</footer>
+</div>
+$charts_script
+</body>
+</html>
+"""
 )
 
 
@@ -254,6 +364,8 @@ class HtmlReportTool(Tool):
         return False
 
     def validate_input(self, input_data: dict[str, Any]) -> ValidationResult:
+        if self._is_v2(input_data):
+            return self._validate_v2(input_data)
         title = input_data.get("title")
         if not title or not isinstance(title, str):
             return ValidationResult.fail("title is required and must be a string")
@@ -357,6 +469,8 @@ class HtmlReportTool(Tool):
         (the agent loop enforces validate-before-call); size/shape caps live
         there. Path containment is still re-checked here as defense in depth.
         """
+        if self._is_v2(input_data):
+            return await self._call_v2(input_data)
         sections = input_data["sections"]
         page = self._render_page(input_data)
 
@@ -484,3 +598,293 @@ class HtmlReportTool(Tool):
             # Fall back to the default CDN rather than shipping a chartless page.
             return f'<script src="{html.escape(DEFAULT_ECHARTS_SRC, quote=True)}"></script>'
         return "<script>" + payload.replace("</", "<\\/") + "</script>"
+
+    # --- v2: Report Document branch (additive; v1 paths above are untouched) ---
+
+    @staticmethod
+    def _is_v2(input_data: dict[str, Any]) -> bool:
+        # 键存在即走 v2(类型错误留给 _validate_v2 给清晰提示,不致误走 v1 报 "title required")
+        return isinstance(input_data, dict) and "document" in input_data
+
+    @staticmethod
+    def _validate_v2_file_name(file_name: Any) -> str | None:
+        # Mirrors v1's bare-name rule (kept separate so v1 validate_input stays byte-identical).
+        if not isinstance(file_name, str) or not file_name:
+            return "file_name must be a non-empty string"
+        if "\x00" in file_name:
+            return "file_name must not contain NUL characters"
+        if Path(file_name).name != file_name or file_name.startswith("."):
+            return "file_name must be a bare file name (no directories)"
+        if file_name.endswith((".", " ")):
+            return "file_name must not end with a dot or space"
+        stem = file_name.split(".", 1)[0].strip().upper()
+        if stem in _WINDOWS_RESERVED_NAMES:
+            return f"file_name '{file_name}' is a reserved device name"
+        return None
+
+    def _validate_v2(self, input_data: dict[str, Any]) -> ValidationResult:
+        document = input_data.get("document")
+        if not isinstance(document, dict):
+            return ValidationResult.fail(
+                "document is required and must be an object (ReportDocument)"
+            )
+        title = document.get("title")
+        if not isinstance(title, str) or not title.strip():
+            return ValidationResult.fail(
+                "document.title is required and must be a non-empty string"
+            )
+        blocks = document.get("blocks")
+        if blocks is not None:
+            if not isinstance(blocks, list):
+                return ValidationResult.fail("document.blocks must be an array if present")
+            if len(blocks) > MAX_SECTIONS:
+                return ValidationResult.fail(f"too many blocks (max {MAX_SECTIONS})")
+            if not all(isinstance(b, dict) for b in blocks):
+                return ValidationResult.fail("document.blocks items must be objects")
+        # 结构性校验:ReportDocument.from_dict 早失败(非法 role / 嵌套 shape),
+        # 兑现 validate-before-call 契约(评审 Medium)。from_dict 纯函数无副作用。
+        try:
+            ReportDocument.from_dict(document)
+        except (TypeError, ValueError, KeyError) as exc:
+            return ValidationResult.fail(f"document is not a valid ReportDocument: {exc}")
+        charts = input_data.get("charts")
+        if charts is not None:
+            if not isinstance(charts, dict):
+                return ValidationResult.fail("charts must be an object {block_id: echarts-option}")
+            for key, val in charts.items():
+                if not isinstance(val, dict):
+                    return ValidationResult.fail(
+                        f"charts['{key}'] must be an ECharts option object"
+                    )
+                # 预检 JSON 可序列化 + 体积上限(评审 High:防止大 option 落盘/冻浏览器)
+                try:
+                    serialized = _escape_json_for_script(val)
+                except (TypeError, ValueError) as exc:
+                    return ValidationResult.fail(f"charts['{key}'] is not JSON-serializable: {exc}")
+                if len(serialized) > MAX_OPTION_CHARS:
+                    return ValidationResult.fail(
+                        f"charts['{key}'] too large ({len(serialized)} chars > {MAX_OPTION_CHARS})"
+                    )
+        file_name = input_data.get("file_name")
+        if file_name is not None:
+            err = self._validate_v2_file_name(file_name)
+            if err:
+                return ValidationResult.fail(err)
+        return ValidationResult.success()
+
+    async def _call_v2(self, input_data: dict[str, Any]) -> ToolResult:
+        document_dict = input_data["document"]
+        charts = input_data.get("charts") or {}
+        try:
+            page = self._render_v2_page(document_dict, charts)
+        except Exception as exc:  # 广义兜底:from_dict/渲染任何未预见错误(评审 Nit)
+            return ToolResult(content=f"Failed to render v2 report: {exc}", is_error=True)
+        file_name = input_data.get("file_name") or (
+            f"report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            f"_{uuid.uuid4().hex[:6]}.html"
+        )
+        out_path = (self.artifact_dir / file_name).resolve()
+        if not out_path.is_relative_to(self.artifact_dir):
+            return ToolResult(
+                content="Permission denied: report path escapes the artifact directory.",
+                is_error=True,
+            )
+        try:
+            out_path.write_text(page, encoding="utf-8")
+        except OSError as exc:
+            return ToolResult(content=f"Failed to write report: {exc}", is_error=True)
+        return ToolResult(
+            content="HTML v2 报告已生成。文件路径见下方产物标注。",
+            metadata={"artifact_paths": [str(out_path)]},
+        )
+
+    def _render_v2_page(self, document_dict: dict[str, Any], charts: dict[str, Any]) -> str:
+        document = ReportDocument.from_dict(document_dict)
+        qa = run_qa(document, artifact_exists=True)
+        title = html.escape(document.title)
+        meta_parts: list[str] = []
+        if document.data_scope:
+            meta_parts.append(html.escape(document.data_scope))
+        meta_parts.append(
+            html.escape(
+                document.generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            )
+        )
+        meta_line = " · ".join(meta_parts)
+
+        n_blocker = sum(1 for f in qa.findings if f.severity is Severity.BLOCKER)
+        n_high = sum(1 for f in qa.findings if f.severity is Severity.HIGH)
+        badge_cls = {
+            Readiness.READY: "qa-ready",
+            Readiness.NEEDS_REVIEW: "qa-needs-review",
+            Readiness.DRAFT: "qa-draft",
+        }[qa.readiness]
+        badge = (
+            f'<span class="qa-badge {badge_cls}">'
+            f"{qa.readiness.value}: {n_blocker} blocker / {n_high} high</span>"
+        )
+        banner = ""
+        if qa.readiness is Readiness.DRAFT:
+            banner = (
+                f'<div class="qa-banner draft">⚠ DRAFT — {n_blocker} blocker findings '
+                "remain; do not treat as final.</div>"
+            )
+        elif qa.readiness is Readiness.NEEDS_REVIEW:
+            banner = (
+                f'<div class="qa-banner needs-review">⚠ NEEDS REVIEW — {n_high} '
+                "high-severity findings to address.</div>"
+            )
+
+        render_calls: list[str] = []
+        blocks_html = self._render_v2_blocks(document, charts, render_calls)
+        charts_script = (
+            _CHARTS_SCRIPT.substitute(render_calls="\n".join(render_calls)) if render_calls else ""
+        )
+        return _PAGE_V2.substitute(
+            title=title,
+            echarts_tag=self._echarts_tag() if render_calls else "",
+            subtitle_html="",
+            meta_line=meta_line,
+            qa_badge=badge,
+            qa_banner=banner,
+            blocks_html=blocks_html,
+            charts_script=charts_script,
+        )
+
+    def _render_v2_blocks(
+        self,
+        document: ReportDocument,
+        charts: dict[str, Any],
+        render_calls: list[str],
+    ) -> str:
+        used_ids: set[str] = set()
+        return "\n".join(
+            self._render_v2_block(b, charts, render_calls, used_ids) for b in document.blocks
+        )
+
+    def _render_v2_block(
+        self,
+        block: ReportBlock,
+        charts: dict[str, Any],
+        render_calls: list[str],
+        used_ids: set[str],
+    ) -> str:
+        role = block.role
+        attrs = self._traceability_attrs(block)
+        heading = f"<h2>{html.escape(block.heading)}</h2>" if block.heading else ""
+
+        if role is BlockRole.HEADER:
+            if not (block.heading or block.body):
+                return ""
+            inner = heading + (_text_to_html(block.body) if block.body else "")
+            return f'<section class="card"{attrs}>{inner}</section>'
+        if role is BlockRole.EXECUTIVE_SUMMARY:
+            inner = heading or "<h2>执行摘要</h2>"
+            if block.body:
+                inner += _text_to_html(block.body)
+            return f'<section class="card summary"{attrs}>{inner}</section>'
+        if role is BlockRole.KPI_STRIP:
+            cards = "".join(self._render_kpi_card(k) for k in block.kpi_cards)
+            inner = heading + f'<div class="kpi-strip">{cards}</div>'
+            return f'<section class="card"{attrs}>{inner}</section>'
+        if role is BlockRole.FINDING:
+            inner = heading or "<h2>发现</h2>"
+            if block.body:
+                inner += _text_to_html(block.body)
+            for caveat in block.caveats:
+                inner += f'<p class="caveat-inline">⚠ {html.escape(caveat)}</p>'
+            return f'<section class="card finding"{attrs}>{inner}</section>'
+        if role is BlockRole.CHART:
+            inner = heading + self._render_v2_chart(block, charts, render_calls, used_ids)
+            return f'<section class="card chart-block"{attrs}>{inner}</section>'
+        if role is BlockRole.TABLE:
+            inner = heading
+            if block.table_columns:
+                inner += self._render_table(
+                    {
+                        "columns": list(block.table_columns),
+                        "rows": [list(r) for r in block.table_rows],
+                    }
+                )
+            return f'<section class="card"{attrs}>{inner}</section>'
+        if role is BlockRole.RECOMMENDATION:
+            inner = heading or "<h2>建议</h2>"
+            if block.body:
+                inner += _text_to_html(block.body)
+            return f'<section class="card recommendation"{attrs}>{inner}</section>'
+        if role is BlockRole.CAVEAT:
+            inner = heading or "<h2>注意事项</h2>"
+            if block.body:
+                inner += _text_to_html(block.body)
+            return f'<section class="card caveat"{attrs}>{inner}</section>'
+        # DATA_CONTEXT / SOURCE_METADATA / unknown → plain card
+        inner = heading or f"<h2>{html.escape(role.value)}</h2>"
+        if block.body:
+            inner += _text_to_html(block.body)
+        return f'<section class="card"{attrs}>{inner}</section>'
+
+    def _render_v2_chart(
+        self,
+        block: ReportBlock,
+        charts: dict[str, Any],
+        render_calls: list[str],
+        used_ids: set[str],
+    ) -> str:
+        chart: ChartSpec | None = block.chart
+        if chart is None:
+            return '<div class="chart-placeholder">图表块缺少 ChartSpec</div>'
+        out = ""
+        option = charts.get(block.block_id) if isinstance(charts, dict) else None
+        if option is not None:
+            chart_id = self._unique_chart_id(block.block_id, used_ids)
+            out += (
+                f'<div class="chart" id="{html.escape(chart_id, quote=True)}" '
+                f'style="height:{DEFAULT_CHART_HEIGHT}px"></div>'
+            )
+            if chart.caption:
+                out += f'<p class="chart-caption">{html.escape(chart.caption)}</p>'
+            render_calls.append(
+                f"  render({_escape_json_for_script(chart_id)}, {_escape_json_for_script(option)});"
+            )
+        else:
+            placeholder = f'<div class="chart-placeholder">图表族:{html.escape(chart.family.value)}'
+            if chart.caption:
+                placeholder += f"<br>说明:{html.escape(chart.caption)}"
+            placeholder += "</div>"
+            out += placeholder
+        if chart.interpretation:
+            out += f'<div class="interpretation">{html.escape(chart.interpretation)}</div>'
+        return out
+
+    @staticmethod
+    def _traceability_attrs(block: ReportBlock) -> str:
+        parts = [f'data-block-id="{html.escape(block.block_id, quote=True)}"']
+        if block.evidence_refs:
+            joined = ",".join(block.evidence_refs)
+            parts.append(f'data-evidence-refs="{html.escape(joined, quote=True)}"')
+        if block.user_need_refs:
+            joined = ",".join(block.user_need_refs)
+            parts.append(f'data-user-need-refs="{html.escape(joined, quote=True)}"')
+        return " " + " ".join(parts)
+
+    @staticmethod
+    def _render_kpi_card(kpi: tuple[tuple[str, str], ...]) -> str:
+        pairs = "".join(
+            f'<div class="kpi-pair"><span class="kpi-k">{html.escape(k)}</span>'
+            f'<span class="kpi-v">{html.escape(v)}</span></div>'
+            for k, v in kpi
+        )
+        return f'<div class="kpi-card">{pairs}</div>'
+
+    @staticmethod
+    def _unique_chart_id(block_id: str, used_ids: set[str]) -> str:
+        # sanitize 到合法 id 字符集 + 去重(评审 Nit:两个 block_id sanitize 后同名
+        # 会导致 div id 重复,getElementById 只返第一个 → 第二图静默丢)。
+        base = f"chart_{re.sub(r'[^A-Za-z0-9_-]', '_', block_id)}"
+        candidate = base
+        n = 2
+        while candidate in used_ids:
+            candidate = f"{base}_{n}"
+            n += 1
+        used_ids.add(candidate)
+        return candidate
