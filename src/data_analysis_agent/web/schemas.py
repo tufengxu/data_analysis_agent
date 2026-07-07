@@ -32,3 +32,9 @@ class QARequest(BaseModel):
     artifact_exists: bool = False
     n_points_by_chart: dict[str, int] | None = None
     n_observations_by_chart: dict[str, int] | None = None
+
+
+class FeedbackRequest(BaseModel):
+    tags: list[str] = []
+    comment: str = ""
+    readiness: str = ""

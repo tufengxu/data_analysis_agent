@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -204,3 +205,27 @@ def test_contract_malformed_user_need(tmp_path: Path):
     )
     assert res.status_code == 200
     assert res.json()["report_type"] == "daily_kpi"
+
+
+# ----------------------------- 反馈捕获(§8 acceptance #3) -----------------------------
+
+
+def test_feedback_stores(tmp_path: Path):
+    """反馈标签追加 JSONL(spec §5.4 feedback tags;§8 Wave 8 acceptance #3)。"""
+    c = _client(tmp_path)
+    res = c.post(
+        "/api/feedback",
+        json={
+            "tags": ["wrong_metric", "weak_chart"],
+            "comment": "GMV 口径未确认",
+            "readiness": "needs_review",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["stored"] is True
+    feedback_file = tmp_path / "feedback.jsonl"
+    assert feedback_file.exists()
+    records = [json.loads(line) for line in feedback_file.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 1
+    assert "wrong_metric" in records[0]["tags"]
+    assert records[0]["readiness"] == "needs_review"
