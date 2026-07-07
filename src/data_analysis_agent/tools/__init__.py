@@ -1,6 +1,7 @@
 """Tool system for the data analysis agent."""
 
 from .base import CanUseToolFn, PermissionResult, Tool, ToolResult, ValidationResult
+from .chart_render import ChartRenderTool
 from .data_profile import DataProfileTool
 from .file_read import FileReadTool
 from .html_report import HtmlReportTool
@@ -14,6 +15,7 @@ from .visualization import VisualizationTool
 
 __all__ = [
     "CanUseToolFn",
+    "ChartRenderTool",
     "DataProfileTool",
     "FileReadTool",
     "HtmlReportTool",

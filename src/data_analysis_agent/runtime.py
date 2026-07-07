@@ -41,6 +41,7 @@ from .skills.loader import load_skills
 from .skills.registry import SkillRegistry
 from .telemetry import TrajectoryLogger
 from .tools import (
+    ChartRenderTool,
     DataProfileTool,
     FileReadTool,
     HtmlReportTool,
@@ -100,6 +101,7 @@ def build_registry(
     registry.register(ReportNeedTool())
     registry.register(ReportContextTool())
     registry.register(ReportContractTool())
+    registry.register(ChartRenderTool(artifact_dir=artifact_dir))
 
     if config:
         for pattern in config.deny_patterns:
@@ -108,6 +110,7 @@ def build_registry(
             registry.add_deny_pattern("python_analysis")
             registry.add_deny_pattern("visualization")
             registry.add_deny_pattern("html_report")
+            registry.add_deny_pattern("chart_render")
 
     return registry
 
@@ -158,6 +161,7 @@ def build_permission_engine(config: AgentConfig) -> PermissionEngine | None:
         engine.add_rule(PermissionRule("python_analysis", PermissionBehavior.DENY))
         engine.add_rule(PermissionRule("visualization", PermissionBehavior.DENY))
         engine.add_rule(PermissionRule("html_report", PermissionBehavior.DENY))
+        engine.add_rule(PermissionRule("chart_render", PermissionBehavior.DENY))
         for name in READ_ONLY_TOOLS:
             engine.add_rule(PermissionRule(name, PermissionBehavior.ALLOW))
     elif mode == PermissionMode.AUTO:

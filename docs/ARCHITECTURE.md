@@ -71,6 +71,7 @@ src/data_analysis_agent/tools/retrieve_result.py = "retrieve_result 工具:按�
 src/data_analysis_agent/tools/report_need.py = "report_need 只读工具:raw_request → UserNeed(显式/隐式分离 + uncertainty,封装 reporting.requirement_parser)"
 src/data_analysis_agent/tools/report_context.py = "report_context 只读工具:data_profile+事件 → DataContext+ProcessContext(封装 reporting.context_collector)"
 src/data_analysis_agent/tools/report_contract.py = "report_contract 只读工具:UserNeed+上下文 → ReportContract(field_sources+四类 ref+missing_context,封装 reporting.traceability)"
+src/data_analysis_agent/tools/chart_render.py = "chart_render 工具:结构化 ChartSpec+数据 → ECharts option+JSON artifact(按图族生成 + 数据充分性 + fallback,非只读)"
 src/data_analysis_agent/skills/base.py = "Skill 抽象基类"
 src/data_analysis_agent/skills/registry.py = "技能注册 + 关键词匹配 + 优先级路由"
 src/data_analysis_agent/skills/builtin.py = "描述性/相关性/趋势/报告生成/联合分析 五个内置分析技能"

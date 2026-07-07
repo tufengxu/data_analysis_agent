@@ -22,6 +22,7 @@ _PROD_TOOLS = {
     "report_need",
     "report_context",
     "report_contract",
+    "chart_render",
 }
 
 
