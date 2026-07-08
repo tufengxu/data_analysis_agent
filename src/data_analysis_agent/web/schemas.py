@@ -1,8 +1,8 @@
-"""Pydantic 请求模型(Wave 8 web workbench)。响应用 reporting 的 to_dict(dict[str, Any])。"""
+"""Pydantic 请求/响应模型(Wave 8 web workbench)。"""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -32,6 +32,20 @@ class QARequest(BaseModel):
     artifact_exists: bool = False
     n_points_by_chart: dict[str, int] | None = None
     n_observations_by_chart: dict[str, int] | None = None
+
+
+class QAFinding(BaseModel):
+    severity: Literal["blocker", "high", "medium", "info"]
+    code: str
+    message: str
+    block_id: str | None = None
+    suggested_fix: str | None = None
+
+
+class QAResponse(BaseModel):
+    readiness: Literal["draft", "needs_review", "ready"]
+    artifact_exists: bool
+    findings: list[QAFinding]
 
 
 class FeedbackRequest(BaseModel):

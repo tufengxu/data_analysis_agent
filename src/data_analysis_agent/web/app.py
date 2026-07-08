@@ -30,7 +30,14 @@ from data_analysis_agent.reporting.requirement_parser import parse_user_need
 from data_analysis_agent.reporting.templates import match_template
 from data_analysis_agent.reporting.traceability import link_to_contract_fields
 
-from .schemas import ContextRequest, ContractRequest, FeedbackRequest, NeedRequest, QARequest
+from .schemas import (
+    ContextRequest,
+    ContractRequest,
+    FeedbackRequest,
+    NeedRequest,
+    QARequest,
+    QAResponse,
+)
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _WINDOWS_RESERVED = frozenset(
@@ -158,7 +165,7 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
         )
         return contract.to_dict()
 
-    @app.post("/api/qa")
+    @app.post("/api/qa", response_model=QAResponse)
     def qa(req: QARequest) -> dict[str, Any]:
         doc = ReportDocument.from_dict(req.document)
         report = run_qa(
