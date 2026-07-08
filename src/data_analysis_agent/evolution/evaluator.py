@@ -50,6 +50,7 @@ class EvalRun:
     final_text: str
     tools_used: tuple[str, ...] = ()  # Wave 7: tool names from ToolResultEvent
     artifact_paths: tuple[str, ...] = ()  # Wave 7: persisted artifact paths
+    artifact_sections: tuple[str, ...] = ()  # Wave 7.5: HTML section markers
 
 
 @dataclass
@@ -112,6 +113,11 @@ def check_assertions(run: EvalRun, assertions: dict[str, Any]) -> tuple[bool, li
     # artifact_produced:truthy → 要求至少一个 artifact 路径;falsy → 不检查(可选断言惯例)
     if assertions.get("artifact_produced") and not run.artifact_paths:
         failures.append("no artifact produced")
+    required_sections = assertions.get("artifact_has_sections")
+    if isinstance(required_sections, list):
+        for section in required_sections:
+            if section not in run.artifact_sections:
+                failures.append(f"artifact section missing: {section}")
     return (not failures, failures)
 
 
@@ -298,12 +304,32 @@ def make_agent_run_fn(client: Any, *, allowed_paths: list[str | Path], config: A
                         artifact_paths.extend(event.artifacts)
                     elif isinstance(event, CompleteEvent):
                         final = event.final_text
+                # Wave 7.5: extract HTML section markers from first artifact
+                artifact_sections: list[str] = []
+                if artifact_paths:
+                    try:
+                        html_text = Path(artifact_paths[0]).read_text(encoding="utf-8")
+                        if 'class="card summary"' in html_text:
+                            artifact_sections.append("executive_summary")
+                        if 'class="card caveat"' in html_text:
+                            artifact_sections.append("caveat")
+                        if 'class="card recommendation"' in html_text:
+                            artifact_sections.append("recommendation")
+                        if 'class="card finding"' in html_text:
+                            artifact_sections.append("finding")
+                        if 'class="card chart-block"' in html_text:
+                            artifact_sections.append("chart")
+                        if 'class="kpi-strip"' in html_text:
+                            artifact_sections.append("kpi")
+                    except (OSError, IndexError):
+                        pass
                 return EvalRun(
                     tool_calls,
                     has_error,
                     final,
                     tuple(tools_used),
                     tuple(artifact_paths),
+                    tuple(artifact_sections),
                 )
             finally:
                 await runtime.shutdown()  # release the per-task runtime (kernel, etc.)

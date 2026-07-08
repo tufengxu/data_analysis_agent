@@ -187,3 +187,45 @@ def test_eval_gate_descriptive_smoke_validates():
         min_domains=3,
     )
     assert ok, errors
+
+
+# ----------------------------- Wave 7.5: section 级 HTML 校验 -----------------------------
+
+
+def test_artifact_has_sections_pass():
+    ok, _ = check_assertions(
+        _run(artifact_sections=("executive_summary", "caveat")),
+        {"artifact_has_sections": ["executive_summary"]},
+    )
+    assert ok
+
+
+def test_artifact_has_sections_fail_exact_prefix():
+    ok, fails = check_assertions(
+        _run(artifact_sections=()),
+        {"artifact_has_sections": ["executive_summary", "caveat"]},
+    )
+    assert not ok
+    assert any(f.startswith("artifact section missing: executive_summary") for f in fails)
+    assert any(f.startswith("artifact section missing: caveat") for f in fails)
+
+
+def test_eval_run_artifact_sections_default():
+    run = EvalRun(tool_call_count=0, has_error=False, final_text="")
+    assert run.artifact_sections == ()
+
+
+def test_eval_gate_allows_artifact_has_sections():
+    errs = validate_task(
+        {
+            "task_id": "x",
+            "input": "y",
+            "assertions": {"artifact_has_sections": ["executive_summary", "caveat"]},
+        }
+    )
+    assert errs == []
+
+
+def test_classify_artifact_section_report_quality():
+    buckets = eval_taxonomy.classify_failures(["artifact section missing: executive_summary"])
+    assert len(buckets[eval_taxonomy.REPORT_QUALITY]) == 1

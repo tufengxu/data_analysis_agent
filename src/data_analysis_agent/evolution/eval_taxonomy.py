@@ -23,6 +23,7 @@ _REPORT_QUALITY_MARKERS = (
     "final text did not match",
     "required tool missing",
     "no artifact produced",
+    "artifact section missing",
 )
 
 

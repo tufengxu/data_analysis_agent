@@ -29,6 +29,7 @@ _ALLOWED_ASSERTION_KEYS = frozenset(
         "final_text_regex",
         "required_tools",
         "artifact_produced",
+        "artifact_has_sections",
     }
 )
 
