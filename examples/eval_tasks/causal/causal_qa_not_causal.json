@@ -1,0 +1,18 @@
+{
+  "task_id": "causal_qa_not_causal",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv:我只是想描述各 variant 的 revenue 分布,不做因果结论。先 causal_contract 再 causal_qa,指出这属于描述性(not causal)。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 6,
+    "required_tools": [
+      "causal_contract",
+      "causal_qa"
+    ],
+    "final_text_contains": [
+      "描述",
+      "not causal"
+    ]
+  }
+}

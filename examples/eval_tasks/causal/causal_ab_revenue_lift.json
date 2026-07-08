@@ -1,0 +1,27 @@
+{
+  "task_id": "causal_ab_revenue_lift",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv(A/B 实验,control 对照,variant_b 处理)判断 variant_b 是否提升了 revenue。先 causal_contract,再 experiment_readout,并用 causal_action_plan 给出带 caveat 和假设的决策建议。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 2,
+    "tool_call_count_max": 9,
+    "required_tools": [
+      "causal_contract",
+      "experiment_readout",
+      "causal_action_plan"
+    ],
+    "final_text_contains": [
+      "caveat",
+      "假设",
+      "建议"
+    ],
+    "artifact_has_sections": [
+      "executive_summary",
+      "finding",
+      "caveat",
+      "recommendation",
+      "kpi"
+    ]
+  }
+}

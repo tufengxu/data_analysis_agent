@@ -1,0 +1,17 @@
+{
+  "task_id": "causal_ab_segment_country",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv 做 experiment_readout,并按 country 分群做描述性分解(Stage1 不做分群级检验),附 caveat。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 8,
+    "required_tools": [
+      "experiment_readout"
+    ],
+    "artifact_has_sections": [
+      "finding",
+      "caveat"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "task_id": "causal_ab_srm_flagged",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv 做 experiment_readout(三臂 control/variant_a/variant_b)。各臂样本量并不均衡,请检查样本比例失衡(SRM)并讨论不平衡的影响,附 caveat。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 8,
+    "required_tools": [
+      "experiment_readout"
+    ],
+    "final_text_contains": [
+      "SRM",
+      "不平衡"
+    ],
+    "artifact_has_sections": [
+      "caveat"
+    ]
+  }
+}

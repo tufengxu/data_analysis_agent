@@ -1,0 +1,21 @@
+{
+  "task_id": "causal_action_plan_hold",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv 做 experiment_readout,若结论 inconclusive 或 SRM,用 causal_action_plan 给出暂缓(hold)的建议与 caveat。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 2,
+    "tool_call_count_max": 9,
+    "required_tools": [
+      "causal_action_plan"
+    ],
+    "final_text_contains": [
+      "暂缓",
+      "hold"
+    ],
+    "artifact_has_sections": [
+      "recommendation",
+      "caveat"
+    ]
+  }
+}

@@ -22,6 +22,10 @@ _PROD_TOOLS = {
     "report_need",
     "report_context",
     "report_contract",
+    "causal_contract",
+    "causal_qa",
+    "experiment_readout",
+    "causal_action_plan",
     "chart_render",
 }
 

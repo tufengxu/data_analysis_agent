@@ -1,0 +1,18 @@
+{
+  "task_id": "causal_ab_three_arm",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv 对三臂(control/variant_a/variant_b)做 experiment_readout,并用 causal_action_plan 给出多臂的聚合决策建议。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 2,
+    "tool_call_count_max": 9,
+    "required_tools": [
+      "experiment_readout",
+      "causal_action_plan"
+    ],
+    "artifact_has_sections": [
+      "executive_summary",
+      "recommendation"
+    ]
+  }
+}

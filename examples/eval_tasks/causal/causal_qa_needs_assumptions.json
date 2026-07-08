@@ -1,0 +1,21 @@
+{
+  "task_id": "causal_qa_needs_assumptions",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv:variant 列把用户分到 control/variant_a/variant_b。我想因果地声称 variant_b 改变了 revenue,但没给任何业务假设。causal_contract + causal_qa,指出缺什么假设(assumption)。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 6,
+    "required_tools": [
+      "causal_contract",
+      "causal_qa"
+    ],
+    "final_text_contains": [
+      "假设",
+      "assumption"
+    ],
+    "artifact_has_sections": [
+      "caveat"
+    ]
+  }
+}

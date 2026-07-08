@@ -166,6 +166,38 @@ IMPORT_RULES: list[dict[str, object]] = [
             "data_analysis_agent.artifacts",
             "data_analysis_agent.__main__",
             "data_analysis_agent.web",
+            "data_analysis_agent.causal",
+        ],
+    },
+    # causal 是纯 stdlib 因果决策领域层(契约/QA/实验统计/报告适配),单向依赖 reporting
+    # (复用 Serializable mixin + 作为 ReportDocument 渲染目标);禁依赖其余一切内部包。
+    # reporting 不在禁入表(刻意:causal 在 reporting 之上,同向依赖)。不能改用 catch-all
+    # `forbid:["data_analysis_agent"]`(会误伤包内 `from .model import ...` 相对导入)。见 ADR 0010。
+    {
+        "who": "data_analysis_agent.causal",
+        "forbid": [
+            "data_analysis_agent.agent_loop",
+            "data_analysis_agent.protocol",
+            "data_analysis_agent.runtime",
+            "data_analysis_agent.evolution",
+            "data_analysis_agent.telemetry",
+            "data_analysis_agent.memory",
+            "data_analysis_agent.tools",
+            "data_analysis_agent.skills",
+            "data_analysis_agent.session",
+            "data_analysis_agent.kernel",
+            "data_analysis_agent.context",
+            "data_analysis_agent.security",
+            "data_analysis_agent.sampling",
+            "data_analysis_agent.persistence",
+            "data_analysis_agent.state_machine",
+            "data_analysis_agent.events",
+            "data_analysis_agent.config",
+            "data_analysis_agent.recovery",
+            "data_analysis_agent.jsonl_store",
+            "data_analysis_agent.artifacts",
+            "data_analysis_agent.__main__",
+            "data_analysis_agent.web",
         ],
     },
     # web 是表现层(FastAPI workbench),消费 reporting 域层 + fastapi/starlette/pydantic;

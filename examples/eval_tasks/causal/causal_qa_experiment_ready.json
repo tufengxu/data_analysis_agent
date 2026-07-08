@@ -1,0 +1,18 @@
+{
+  "task_id": "causal_qa_experiment_ready",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv:A/B 实验,control 对照,variant_b 处理,outcome=revenue,护栏=crash_count,假设无溢出效应。causal_contract + causal_qa,确认是否 experiment_ready(就绪)。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 6,
+    "required_tools": [
+      "causal_contract",
+      "causal_qa"
+    ],
+    "final_text_contains": [
+      "ready",
+      "就绪"
+    ]
+  }
+}

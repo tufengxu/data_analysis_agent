@@ -1,0 +1,17 @@
+{
+  "task_id": "causal_ab_purchase_count_mean",
+  "input": "用 ../training_data/week1_seed_assets/data/mobile_app_ab_test.csv 对 purchase_count 做实验读出(control 对照),purchase_count 多为 0,按均值口径处理,给出 caveat。",
+  "dataset_fixture": "../training_data/week1_seed_assets/data/mobile_app_ab_test.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 8,
+    "required_tools": [
+      "experiment_readout"
+    ],
+    "artifact_has_sections": [
+      "finding",
+      "caveat"
+    ]
+  }
+}

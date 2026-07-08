@@ -41,6 +41,21 @@ _DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
     "finance": ("金融", "财务", "finance"),
     "operations": ("运营", "operations"),
     "risk": ("风险", "risk"),
+    # Stage1 因果决策域(P1-10):实验/产品分析任务计入域覆盖。注意不用 "app"
+    # (是 happen/application 等的子串,误匹配风险高)。
+    "experiment": (
+        "实验",
+        "A/B",
+        "ab测试",
+        "ab test",
+        "experiment",
+        "随机",
+        "分流",
+        "variant",
+        "treatment",
+        "对照组",
+    ),
+    "product": ("产品", "product"),
 }
 
 MIN_TASKS = 20

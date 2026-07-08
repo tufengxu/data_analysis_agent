@@ -37,12 +37,17 @@ from .skills.builtin import (
     ReportGenerationSkill,
     TrendAnalysisSkill,
 )
+from .skills.causal_skill import CausalDecisionAnalysisSkill
 from .skills.loader import load_skills
 from .skills.registry import SkillRegistry
 from .telemetry import TrajectoryLogger
 from .tools import (
+    CausalActionPlanTool,
+    CausalContractTool,
+    CausalQATool,
     ChartRenderTool,
     DataProfileTool,
+    ExperimentReadoutTool,
     FileReadTool,
     HtmlReportTool,
     NlQueryTool,
@@ -64,6 +69,10 @@ READ_ONLY_TOOLS = (
     "report_need",
     "report_context",
     "report_contract",
+    "causal_contract",
+    "causal_qa",
+    "experiment_readout",
+    "causal_action_plan",
 )
 
 
@@ -101,6 +110,10 @@ def build_registry(
     registry.register(ReportNeedTool())
     registry.register(ReportContextTool())
     registry.register(ReportContractTool())
+    registry.register(CausalContractTool())
+    registry.register(CausalQATool())
+    registry.register(ExperimentReadoutTool())
+    registry.register(CausalActionPlanTool())
     registry.register(ChartRenderTool(artifact_dir=artifact_dir))
 
     if config:
@@ -125,6 +138,7 @@ def build_skill_registry(
     skills.register(TrendAnalysisSkill())
     skills.register(ReportGenerationSkill())
     skills.register(JointAnalysisSkill())
+    skills.register(CausalDecisionAnalysisSkill())
     if skills_dir is not None:
         for declarative in load_skills(skills_dir, statuses=("active",)):
             skills.register(declarative)
