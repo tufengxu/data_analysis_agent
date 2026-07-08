@@ -37,6 +37,8 @@ _SUPPORTED_FAMILIES = (
     "scatter",
     "heatmap",
     "funnel",
+    "waterfall",
+    "dot",
 )
 
 # Windows 设备名(镜像 html_report 的 _WINDOWS_RESERVED_NAMES;复制以避免动 html_report)。
@@ -170,6 +172,17 @@ class ChartRenderTool(Tool):
             for i, s in enumerate(stages):
                 if not isinstance(s, dict) or "name" not in s or "value" not in s:
                     return ValidationResult.fail(f"data.stages[{i}] must have name and value")
+        elif family == "waterfall":
+            labels = data.get("labels")
+            if not isinstance(labels, list) or not labels:
+                return ValidationResult.fail("waterfall requires a non-empty data.labels array")
+            deltas = data.get("deltas")
+            if not isinstance(deltas, list) or not deltas:
+                return ValidationResult.fail("waterfall requires a non-empty data.deltas array")
+            if len(deltas) != len(labels):
+                return ValidationResult.fail(
+                    f"waterfall deltas length ({len(deltas)}) != labels ({len(labels)})"
+                )
         else:
             labels = data.get("labels")
             if not isinstance(labels, list) or not labels:
@@ -218,6 +231,9 @@ class ChartRenderTool(Tool):
             n_observations = None
         elif cf is ChartFamily.FUNNEL:
             n_points = len(data["stages"])
+            n_observations = None
+        elif cf is ChartFamily.WATERFALL:
+            n_points = len(data["deltas"])
             n_observations = None
         else:
             n_points = len(data["labels"])
@@ -308,6 +324,34 @@ class ChartRenderTool(Tool):
         if cf is ChartFamily.FUNNEL:
             option["tooltip"] = {"trigger": "item", "formatter": "{b}: {c}"}
             option["series"] = [{"type": "funnel", "data": data["stages"]}]
+            return option
+        if cf is ChartFamily.WATERFALL:
+            option["xAxis"] = {"type": "category", "data": data["labels"]}
+            option["yAxis"] = {"type": "value"}
+            colored = [
+                {"value": d, "itemStyle": {"color": "#2eaa76" if d >= 0 else "#c0392b"}}
+                for d in data["deltas"]
+            ]
+            option["series"] = [{"type": "bar", "data": colored}]
+            return option
+        if cf is ChartFamily.DOT:
+            option["xAxis"] = {"type": "category", "data": data["labels"]}
+            if x_name:
+                option["xAxis"]["name"] = x_name
+            option["yAxis"] = {"type": "value"}
+            if y_name:
+                option["yAxis"]["name"] = y_name
+            series = []
+            for s in data["series"]:
+                dot_item: dict[str, Any] = {
+                    "name": s.get("name", ""),
+                    "type": "bar",
+                    "data": s["values"],
+                    "barWidth": 3,
+                    "itemStyle": {"borderRadius": [50, 50, 0, 0]},
+                }
+                series.append(dot_item)
+            option["series"] = series
             return option
         # line / bar / grouped_bar / stacked_bar —— 共享 category xAxis
         x_axis = {"type": "category", "data": data["labels"]}

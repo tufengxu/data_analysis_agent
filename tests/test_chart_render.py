@@ -392,6 +392,50 @@ def test_funnel_validates_data_shape(tmp_path: Path):
     ).valid
 
 
+# ----------------------------- waterfall + dot(补全 ChartFamily) -----------------------------
+
+
+async def test_waterfall_option(tmp_path: Path):
+    tool = _tool(tmp_path)
+    result = await tool.call(
+        {
+            "block_id": "c1",
+            "family": "waterfall",
+            "data": {"labels": ["A", "B", "C"], "deltas": [10, -3, 5]},
+        }
+    )
+    opt = result.metadata["chart_option"]
+    assert opt["series"][0]["type"] == "bar"
+    assert opt["series"][0]["data"][0]["itemStyle"]["color"] == "#2eaa76"
+    assert opt["series"][0]["data"][1]["itemStyle"]["color"] == "#c0392b"
+    assert result.metadata["chart_meta"]["n_points"] == 3
+
+
+async def test_dot_option(tmp_path: Path):
+    tool = _tool(tmp_path)
+    result = await tool.call(
+        {
+            "block_id": "c1",
+            "family": "dot",
+            "data": {"labels": ["A", "B"], "series": [{"name": "x", "values": [1, 2]}]},
+        }
+    )
+    opt = result.metadata["chart_option"]
+    assert opt["series"][0]["type"] == "bar"
+    assert opt["series"][0]["barWidth"] == 3
+    assert opt["series"][0]["itemStyle"]["borderRadius"] == [50, 50, 0, 0]
+
+
+def test_waterfall_validates_data_shape(tmp_path: Path):
+    tool = _tool(tmp_path)
+    assert not tool.validate_input(
+        {"block_id": "c1", "family": "waterfall", "data": {"labels": ["a"], "deltas": []}}
+    ).valid
+    assert not tool.validate_input(
+        {"block_id": "c1", "family": "waterfall", "data": {"labels": ["a", "b"], "deltas": [1]}}
+    ).valid
+
+
 async def test_call_time_is_relative_to_defense(tmp_path: Path):
     """直接 call()(绕过 validate)用逃逸 file_name → is_relative_to 兜底返 is_error。"""
     tool = _tool(tmp_path)
