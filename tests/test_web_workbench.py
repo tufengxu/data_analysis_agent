@@ -229,3 +229,22 @@ def test_feedback_stores(tmp_path: Path):
     assert len(records) == 1
     assert "wrong_metric" in records[0]["tags"]
     assert records[0]["readiness"] == "needs_review"
+
+
+# ----------------------------- 非确定性端点 stub(后续统一测试) -----------------------------
+
+
+def test_run_stream_stub_returns_requirements(tmp_path: Path):
+    """Live event stream stub(§11;完整实现需 LLM + WebSocket,当前返回架构需求)。"""
+    c = _client(tmp_path)
+    res = c.get("/api/run/stream")
+    assert res.status_code == 200
+    assert res.json()["status"] == "not_implemented"
+
+
+def test_rerun_stub_returns_requirements(tmp_path: Path):
+    """Correction+rerun stub(§8 #2;完整实现需 agent 回路,当前返回架构需求)。"""
+    c = _client(tmp_path)
+    res = c.post("/api/report/rerun")
+    assert res.status_code == 200
+    assert res.json()["status"] == "not_implemented"

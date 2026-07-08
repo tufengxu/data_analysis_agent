@@ -208,4 +208,32 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
         return {"stored": True, "path": str(feedback_path)}
 
+    # ---- 非确定性端点(需 LLM 运行时;当前 stub,后续统一测试) ----
+
+    @app.get("/api/run/stream")
+    def run_stream_stub() -> dict[str, Any]:
+        """Live agent 事件流 stub(spec §11 MVP 'event stream')。
+
+        实现需:(1) 放宽 drift(web→runtime)或新建 server/ 包;(2) WebSocket/SSE;
+        (3) Anthropic API key。当前返回架构需求说明。
+        """
+        return {
+            "status": "not_implemented",
+            "reason": "requires drift rule relaxation (web→runtime) + LLM client + WebSocket",
+            "spec_ref": "§11 MVP event stream; §8 Wave 8 live agent event stream",
+        }
+
+    @app.post("/api/report/rerun")
+    def rerun_stub() -> dict[str, Any]:
+        """Correction+rerun stub(spec §8 Wave 8 acceptance #2 'correct intent before rerun')。
+
+        实现需:(1) agent 回路(运行 agent 产新报告);(2) 接收修正后的 contract/need;
+        (3) 重新跑分析 + 渲染。当前返回架构需求说明。
+        """
+        return {
+            "status": "not_implemented",
+            "reason": "requires agent loop integration (run agent with modified contract)",
+            "spec_ref": "§8 Wave 8 acceptance #2 correction+rerun",
+        }
+
     return app
