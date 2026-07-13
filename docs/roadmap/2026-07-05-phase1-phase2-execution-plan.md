@@ -26,9 +26,33 @@ Primary decision:
   contracts while adding multi-tenant security, isolated execution, queues,
   service-level observability, managed data connectors, and controlled skill
   rollout.
+- Decision intelligence target: add causal decision support in two stages.
+  Phase 1 builds a local, auditable causal-decision MVP around Causal Contract,
+  causal-readiness QA, A/B experiment readout, and guarded action plans. Phase 2
+  turns that into a governed causal inference and experimentation platform with
+  stronger estimators, heterogeneous effects, quasi-experiments, and scalable
+  experiment operations.
 - Avoided path: do not jump directly to a web service, multi-agent orchestration,
   vector memory, or self-editing code before local safety, real evals, and human
   skill review are reliable.
+
+### 0.1 Status Board
+
+Status labels:
+
+- In progress: already partially supported by current code or active report
+  delivery waves.
+- Planned next: should be built in Phase 1 after its dependencies are stable.
+- Later: Phase 2 platformization work.
+- Not started: no current implementation or plan artifact yet.
+
+| Capability line | Status | Roadmap owner | Notes |
+| --- | --- | --- | --- |
+| Report contract, context, QA, chart/report delivery | In progress | P1-4 / report waves | `report_need`, `report_context`, `report_contract`, reporting QA, templates, and chart/render work are already present or underway. |
+| Local Web Workbench | Planned next | P1-3 | Needs local safety/workspace foundation before full live-agent UX. |
+| Causal Decision MVP | Planned next | P1-10 | First-stage executable plan exists at docs/superpowers/plans/2026-07-07-causal-decision-stage1.md. |
+| Causal inference platformization | Later | P2-12 | Depends on Phase 1 causal contracts, experiment readout, evals, and governance. |
+| Multi-user distributed platform | Later | P2-1..P2-11 | Must not weaken Phase 1 local safety contracts. |
 
 ## 1. Acceptance Contract
 
@@ -43,7 +67,7 @@ Primary decision:
   "acceptance": [
     "A durable roadmap document exists under docs/roadmap/.",
     "Phase 1 and Phase 2 each have goals, non-goals, workstreams, dependencies, concrete tasks, acceptance checks, and verification commands.",
-    "The plan explicitly covers local Web Workbench, data authorization, project workspace, safety, analysis tools, memory, telemetry, self-evolution, evaluation, quality gates, and distributed production architecture.",
+    "The plan explicitly covers local Web Workbench, data authorization, project workspace, safety, analysis tools, causal decision support, memory, telemetry, self-evolution, evaluation, quality gates, and distributed production architecture.",
     "The plan separates current files from planned future file locations.",
     "The repository quality gate remains green or any failure is explained with evidence."
   ],
@@ -98,6 +122,9 @@ Known gaps that shape this roadmap:
 - Analysis tools cover the core path, but production-grade data-quality,
   join-planning, metric-contract, chart-rendering, and report-QA tools are not
   complete.
+- Current code can flag unsupported causal language in reports, but it does not
+  yet model treatment, outcome, confounders, intervention, identification
+  assumptions, estimators, refutations, or experiment decision rules.
 
 ## 3. Design Principles
 
@@ -124,6 +151,9 @@ dependable analysis workbench:
 - describe an analysis need in natural language;
 - watch the agent's tool-use process in real time;
 - receive reproducible artifacts and reports;
+- distinguish descriptive, correlational, experimental, and causal claims;
+- use a local causal-decision workflow for A/B readouts and guarded action
+  recommendations;
 - provide feedback;
 - accumulate governed memory and trajectories;
 - harvest real eval tasks;
@@ -138,6 +168,8 @@ dependable analysis workbench:
 - No remote data connectors by default.
 - No autonomous code patching.
 - No automatic skill promotion without human review.
+- No claim that observation-only correlation is causal evidence.
+- No complex observational causal estimator as the default Phase 1 path.
 - No claim that the local Python sandbox is a security boundary.
 - No broad frontend framework unless the local HTML/SSE approach proves
   inadequate.
@@ -552,6 +584,84 @@ Acceptance:
 - A new user can install, run Web Workbench, analyze a sample file, inspect
   artifacts, and understand where data is stored.
 
+### P1-10. Causal Decision MVP
+
+Status: planned next.
+
+Purpose: move from objective data reporting to decision-support workflows while
+strictly separating correlation, experiment evidence, causal assumptions, and
+recommended actions.
+
+Dependencies:
+
+- P1-4 report/data-quality/report-QA foundations.
+- P1-7 behavior eval and failure taxonomy.
+- Existing reporting traceability model and process context.
+- Week-1 mobile app A/B seed asset as the first experiment-readout fixture.
+
+Tasks:
+
+- P1-10.1 Add a Causal Contract design and domain model.
+  - Required concepts: decision question, treatment/action, outcome, unit,
+    time window, population, assignment mechanism, candidate confounders,
+    business assumptions, external events, data limitations, and decision
+    threshold.
+  - Phase 1 model must be pure stdlib and deterministic, mirroring the reporting
+    domain-layer approach.
+- P1-10.2 Add causal-intent parsing.
+  - Detect requests such as "为什么下降", "是否导致", "能否提升",
+    "实验组是否有效", "下一步怎么做".
+  - Route them to a causal-decision workflow without treating inferred intent as
+    explicit fact.
+- P1-10.3 Add causal-readiness QA.
+  - Block causal-ready labels when treatment/outcome/unit/time window are
+    missing.
+  - Mark observation-only analysis as correlation or hypothesis unless an
+    experiment or accepted identification strategy exists.
+  - Require caveats for confounding, selection bias, spillover, seasonality,
+    external events, and sample-ratio mismatch.
+- P1-10.4 Add A/B experiment readout MVP.
+  - Analyze randomized experiment data: group balance, sample ratio mismatch,
+    conversion/mean lift, confidence interval, guardrail metrics, segment
+    checks, and decision recommendation.
+  - Output must include "ship / do not ship / inconclusive / needs more data"
+    with explicit decision criteria.
+- P1-10.5 Add action-plan output.
+  - Translate causal or experimental findings into operational actions only when
+    evidence and assumptions support them.
+  - Each action must include expected mechanism, target population, risk,
+    monitoring metric, rollback trigger, and next experiment.
+- P1-10.6 Add report integration.
+  - Render causal contracts, readiness state, estimates, refutations/caveats,
+    experiment decisions, and action plans into Report Document / HTML output.
+- P1-10.7 Add eval fixtures.
+  - Use the existing mobile_app_ab_test seed dataset first.
+  - Add at least 8-12 causal/experiment tasks covering: randomized experiment,
+    suspicious imbalance, segment heterogeneity, observation-only correlation,
+    missing outcome, missing treatment, external-event caveat, and inconclusive
+    decision.
+- P1-10.8 Keep external causal libraries out of the first implementation slice.
+  - Phase 1 may use pandas/numpy calculations for A/B readout.
+  - DoWhy/EconML/CausalML integration is deferred to Phase 2 or a later Phase 1
+    extension after the contract/QA surface is stable.
+
+Acceptance:
+
+- A report can clearly say whether it is descriptive, correlational,
+  experimental, or causal-assumption-based.
+- A/B experiment tasks produce auditable estimates, caveats, and a bounded
+  decision recommendation.
+- Observation-only tasks cannot pass as causal-ready without explicit accepted
+  assumptions.
+- Every recommended action is tied to evidence, assumptions, and monitoring.
+
+Verification:
+
+- Focused tests for causal contract serialization, causal-intent parsing,
+  readiness QA, A/B readout calculations, and report adapter output.
+- Seed-task behavior evals for experiment and observation-only cases.
+- `.venv/bin/python scripts/quality_gate.py`
+
 ## 7. Phase 1 Suggested Milestones
 
 ### Milestone 1A: Safety and Workspace Baseline
@@ -630,6 +740,26 @@ Exit criteria:
 - A single user can use the system as a durable local workbench for real
   analysis projects.
 
+### Milestone 1F: Causal Decision MVP
+
+Status: planned next after Milestone 1C foundations.
+
+Must include:
+
+- Causal Contract domain model.
+- causal-intent routing.
+- causal-readiness QA.
+- A/B experiment readout MVP.
+- action-plan output.
+- causal report integration.
+- causal/experiment eval fixtures.
+
+Exit criteria:
+
+- The agent can turn an experiment dataset into a decision-ready readout with
+  caveats and an action plan.
+- The agent refuses to upgrade correlation-only evidence into causal claims.
+
 ## 8. Phase 1 Completion Checklist
 
 - [ ] Local-safe mode is the default for Web Workbench.
@@ -644,6 +774,12 @@ Exit criteria:
 - [ ] Browser supports feedback.
 - [ ] Every run has a manifest.
 - [ ] Sensitive-mode run suppresses telemetry/memory writes.
+- [ ] Causal Decision MVP marks descriptive/correlation/experimental/causal
+      claim levels separately.
+- [ ] A/B experiment readout supports balance checks, lift estimates, caveats,
+      and bounded decision recommendation.
+- [ ] Observation-only causal requests produce hypothesis/readiness output
+      unless identification assumptions are explicit.
 - [ ] Memory can be listed, confirmed, corrected, forgotten, and exported.
 - [ ] At least 30-50 eval tasks exist across representative local scenarios.
 - [ ] Candidate skills need eval and human approval before activation.
@@ -665,6 +801,7 @@ Phase 2 is complete when DataAnalysisAgent is a distributed production platform:
 - centralized eval and skill registry;
 - canary skill rollout and rollback;
 - production observability and SLOs;
+- governed causal inference, experimentation, and action-strategy services;
 - compliance-ready audit trails.
 
 ## 10. Phase 2 Non-Goals
@@ -686,6 +823,8 @@ Do not start distributed production build until Phase 1 has:
 - memory governance contract;
 - eval task and skill promotion contract;
 - at least one real skill promotion history;
+- Phase 1 Causal Contract and causal-readiness QA, if decision intelligence is
+  in scope for the Phase 2 build;
 - documented threat model and release checklist.
 
 ## 12. Phase 2 Workstreams
@@ -983,6 +1122,55 @@ Acceptance:
 - Production deployment has repeatable environment setup, auditable security
   posture, and cost visibility.
 
+### P2-12. Causal Inference and Experimentation Platform
+
+Status: later.
+
+Purpose: evolve the Phase 1 Causal Decision MVP into a governed production
+capability for causal inference, quasi-experiments, heterogeneous treatment
+effects, and experiment operations.
+
+Tasks:
+
+- P2-12.1 Add a causal inference service boundary.
+  - Version causal contracts, causal graphs, estimators, refutations,
+    experiment readouts, and decisions.
+  - Store assumptions and user approvals as first-class audit objects.
+- P2-12.2 Integrate mature causal libraries behind adapters.
+  - Candidate families: DoWhy-style identify/estimate/refute workflow,
+    EconML-style heterogeneous treatment effect estimation, CausalML-style
+    uplift modeling, and causal-discovery libraries for hypothesis generation.
+  - Library output must be normalized into project-owned causal result models.
+- P2-12.3 Add observational causal methods.
+  - Matching/weighting, regression adjustment, difference-in-differences,
+    interrupted time series, synthetic controls, instrumental variables where
+    justified.
+  - Each method requires explicit data requirements and falsification checks.
+- P2-12.4 Add heterogeneous effect and targeting strategy.
+  - Estimate which users, accounts, regions, products, or channels respond most
+    to an action.
+  - Require guardrails against unfair or unstable targeting.
+- P2-12.5 Add experiment design and operations.
+  - Power/MDE planning, randomization unit, stratification, holdout,
+    guardrails, stopping rules, spillover risks, and launch checklist.
+- P2-12.6 Add experiment registry and result service.
+  - Track hypothesis, treatment, owner, launch date, data source, metrics,
+    decision, follow-up action, and post-launch monitoring.
+- P2-12.7 Add causal eval suites.
+  - Synthetic datasets with known ground truth.
+  - Realistic business fixtures with known limitations.
+  - Regression checks for overclaiming, bad adjustment, leakage, and unsupported
+    action recommendations.
+
+Acceptance:
+
+- Causal inference outputs are auditable from business question to assumptions,
+  estimator, sensitivity/refutation checks, and final decision.
+- The platform supports both randomized experiments and clearly labeled
+  observational causal analyses.
+- No causal strategy can be marked production-ready without method-specific
+  checks and human review.
+
 ## 13. Phase 2 Suggested Milestones
 
 ### Milestone 2A: Service Skeleton
@@ -1013,6 +1201,15 @@ Acceptance:
 
 - Collaborative frontend, dashboards, SLOs, alerts, compliance, cost controls.
 
+### Milestone 2G: Causal Strategy Platform
+
+- causal inference service.
+- experiment registry.
+- estimator adapters.
+- heterogeneous treatment effect workflows.
+- causal eval suite.
+- human review and audit.
+
 ## 14. Phase 2 Completion Checklist
 
 - [ ] All Phase 1 contracts exist and are stable.
@@ -1026,6 +1223,8 @@ Acceptance:
 - [ ] Eval farm exists.
 - [ ] Skill registry supports versioning, canary, rollback.
 - [ ] Policy engine gates tools, data, memory, and network access.
+- [ ] Causal inference and experiment workflows have versioned assumptions,
+      estimators, refutations, decisions, and audit trails.
 - [ ] Observability covers logs, metrics, traces, and alerts.
 - [ ] SLOs and incident runbooks exist.
 - [ ] Cost attribution and budgets exist.
@@ -1037,12 +1236,13 @@ Acceptance:
 2. P1-2 project workspace.
 3. P1-3 Local Web Workbench MVP.
 4. P1-4 data-analysis tool hardening.
-5. P1-5 memory governance.
-6. P1-6 governed self-evolution.
-7. P1-7 eval/behavior gates.
-8. P1-8 local operations.
-9. P1-9 docs and release candidate.
-10. Phase 2 only after Phase 1 completion evidence exists.
+5. P1-7 eval/behavior gates.
+6. P1-10 Causal Decision MVP.
+7. P1-5 memory governance.
+8. P1-6 governed self-evolution.
+9. P1-8 local operations.
+10. P1-9 docs and release candidate.
+11. Phase 2 only after Phase 1 completion evidence exists.
 
 ## 16. Review Requirements
 
@@ -1059,6 +1259,7 @@ clean-context code review:
 - telemetry and redaction;
 - evolution promotion;
 - eval gates;
+- causal contracts, estimators, experiment analysis, and action recommendations;
 - distributed execution;
 - authentication/authorization;
 - connectors and secrets.
@@ -1076,6 +1277,9 @@ re-checks until no must-fix findings remain.
 | Skill overfits one dataset | 1/2 | Major | Real eval tasks, sample gates, human review |
 | Memory stores stale values | 1/2 | Major | ADR 0004: structure not volatile numbers |
 | Telemetry captures sensitive details | 1/2 | Major | Sensitive mode, redaction, retention, audit |
+| Correlation is mislabeled as causation | 1/2 | Blocking | Causal Contract + causal-readiness QA + report caveats |
+| Experiment decision ignores imbalance or guardrails | 1/2 | Major | A/B readout must check balance, SRM, guardrails, and inconclusive state |
+| Observational causal estimator gives false confidence | 2 | Blocking | Method-specific assumptions, refutations, sensitivity checks, and human review |
 | Distributed rollout spreads bad skill | 2 | Blocking | Canary, rollback, eval farm, policy |
 | Multi-tenant data leakage | 2 | Blocking | RBAC/ABAC, isolated execution, scoped credentials |
 
