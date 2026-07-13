@@ -116,6 +116,49 @@ def test_ast_rejects_frame_attribute_sink() -> None:
     assert not tool.validate_input({"code": "x = gen.gi_frame"}).valid
 
 
+@pytest.mark.parametrize(
+    "attr",
+    [
+        # frame sinks
+        "f_builtins",
+        "f_globals",
+        "f_locals",
+        "f_back",
+        "f_code",
+        "gi_frame",
+        "cr_frame",
+        "ag_frame",
+        "tb_frame",
+        # code-object sinks (added with their *_frame siblings for symmetry)
+        "gi_code",
+        "cr_code",
+        "ag_code",
+        "tb_next",
+    ],
+)
+def test_frame_and_code_sinks_rejected_in_isolation(attr: str) -> None:
+    """Every name in ``frame_attrs`` is rejected even as a bare attribute
+    reference. Pin ALL of them so removing any one from the set breaks a test
+    (the round-1 fix added gi_code/cr_code/ag_code/tb_next — this stops them
+    silently regressing)."""
+    tool = PythonAnalysisTool()
+    assert not tool.validate_input({"code": f"x = obj.{attr}"}).valid
+
+
+def test_loader_implicit_global_is_known_residual() -> None:
+    """ADR 0008 residual: ``__loader__`` is an implicit ``__main__`` global (a
+    SourceFileLoader); ``__loader__.get_data(path)`` reads any absolute path —
+    same open class as linecache/io.FileIO/tarfile, just cheaper (no import).
+    Pinning as a residual: if it starts being REJECTED, ADR 0008's residual
+    section + this test must move together — do not silently flip.
+    """
+    tool = PythonAnalysisTool()
+    assert tool.validate_input({"code": '__loader__.get_data("/etc/passwd")'}).valid, (
+        "__loader__.get_data was apparently closed — update ADR 0008's residual "
+        "section and this test together"
+    )
+
+
 def test_path_zero_arg_does_not_crash() -> None:
     """Regression: ``Path()`` and ``Path().resolve()`` (idiomatic cwd lookup)
     once crashed the validator with IndexError. They must validate cleanly."""

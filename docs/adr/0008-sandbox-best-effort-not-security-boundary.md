@@ -28,7 +28,9 @@ post-validation 注入、不受影响。
   (见决策第 1 条的取舍)。
 - **标准库「按路径读文件」的整类模块**:已被验证仍可触达的包括 `io.FileIO`、`linecache`、
   `tarfile`、`zipfile`、`shelve`、`dbm`、`configparser` 等——它们以路径字符串打开/读取文件,
-  既不在 `dangerous_imports` 也不在 `dangerous_path_methods`。这是一**开放类**(无法穷举),
+  既不在 `dangerous_imports` 也不在 `dangerous_path_methods`。同类的还有隐式 `__main__` 全局
+  `__loader__`(`SourceFileLoader.get_data(path)` 可读任意绝对路径,无需 import,比上者更廉价)。
+  这是一**开放类**(无法穷举),
   与「计算路径读取」同源;逐个封堵是无尽打地鼠且会带来虚假的安全感,故按决策第 1 条刻意保留为
   已知残留,而非逐个加黑名单。威胁模型改变(需抵御主动逃逸)时,应改用容器化/安全执行运行时,
   而非继续扩这个黑名单。
@@ -50,6 +52,13 @@ post-validation 注入、不受影响。
   默认 venv 里这些库**未安装**(网络出口不可达);但用户环境若装了,模型便可借其外发数据/拉取凭证。这是
   与前两类同构的**开放类**(整个 PyPI 的网络/DB 库无法穷举),刻意不逐个封堵——同上,换容器化/网络命名空间
   才是真解。本类在威胁模型(兜住模型别干蠢事)下优先级低于本地文件误删。
+- **父进程信任子进程产物的读边界(非 ACE)**:`agent_result([{"type":"image","path":...}])` 由
+  前导码注入、模型可自由调用,父进程(`_compose_result`)会按子进程给出的 `path` 直接 `open`+base64
+  装进 `metadata.images`,不经 `allowed_paths` 把关(如 `/etc/hosts` 会被读入上下文)。这是**读取**
+  (非任意代码执行),且子进程本就能借 stdout 外发任意用户可读文件(读边界本就不成立)。**刻意不修**:
+  合法图表写在沙箱 `cwd`(tmpdir)而非 `allowed_paths`,朴素 allowlist 会误杀合法产物;真要收紧须把
+  `cwd` 透传给 `_compose_result` 做「`cwd` 或 `allowed_paths`」判定,价值/复杂度比在本威胁模型(单用户
+  本地 CLI、读的是用户自己可读的文件)下不划算,记为已知残留。威胁模型改变时再处理。
 
 威胁模型经确认是**单用户本地 CLI**:沙箱要兜住的是「模型写出蠢代码误伤用户文件」,
 不是「抵御恶意租户」。残留洞在该模型下 blast radius = 用户自己的进程权限。
