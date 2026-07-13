@@ -9,9 +9,11 @@ from __future__ import annotations
 import ast
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import os
+import resource
 import shutil
 import sys
 import tempfile
@@ -39,6 +41,34 @@ _SANDBOX_SUMMARY_SRC = (
 ).read_text(encoding="utf-8")
 
 _spawn_subprocess = asyncio.create_subprocess_exec
+
+# Best-effort resource caps applied to the one-shot (stateless) subprocess via
+# ``preexec_fn``. Generous enough for legitimate one-shot analyses, tight enough
+# to bound a runaway (disk fill, CPU spin). These apply ONLY to the stateless
+# fallback path; the default persistent-kernel path is uncapped (legit large
+# exports go through it). See ADR 0008 for the full rationale and the macOS
+# caveat (RLIMIT_AS is a no-op on Darwin; only FSIZE/CPU are enforced there).
+_RLIMIT_FSIZE_BYTES = 4 * 1024 * 1024 * 1024  # 4 GB cap on a single file written
+_RLIMIT_AS_BYTES = 4 * 1024 * 1024 * 1024  # 4 GB address-space cap (Linux only)
+
+
+def _apply_rlimits(cpu_seconds: int) -> None:
+    """Set resource limits in the child process (called via ``preexec_fn``).
+
+    Must never raise — an exception in ``preexec_fn`` aborts the spawn. Each
+    limit is therefore independent and failure-tolerant: RLIMIT_FSIZE and
+    RLIMIT_CPU are enforced on both macOS and Linux; RLIMIT_AS is Linux-only
+    (Darwin refuses to lower it once shared libraries are mapped into the
+    address space, so on macOS it silently degrades to a no-op).
+    """
+
+    fsize = _RLIMIT_FSIZE_BYTES
+    with contextlib.suppress(ValueError, OSError):
+        resource.setrlimit(resource.RLIMIT_FSIZE, (fsize, fsize))
+    with contextlib.suppress(ValueError, OSError):
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+    with contextlib.suppress(ValueError, OSError):
+        resource.setrlimit(resource.RLIMIT_AS, (_RLIMIT_AS_BYTES, _RLIMIT_AS_BYTES))
 
 
 class PythonAnalysisTool(Tool):
@@ -152,13 +182,31 @@ class PythonAnalysisTool(Tool):
         return ValidationResult.success()
 
     def _validate_ast(self, code: str) -> str | None:
-        """Parse code with AST and reject dangerous constructs."""
+        """Parse code with AST and reject dangerous constructs.
+
+        Never raises: a validator bug surfaces as a fail-closed validation
+        failure rather than an uncaught exception in the agent loop. (A crash
+        on ``Path()`` once propagated out and killed a turn — see
+        ``tests/test_sandbox_hardening.py``.)
+        """
         try:
-            tree = ast.parse(code)
+            return self._analyze_ast(code)
         except SyntaxError as e:
             return f"Syntax error: {e}"
+        except Exception as e:  # pragma: no cover - defensive; never bypass
+            logger.exception("AST validator crashed (fail-closed)")
+            return f"Code rejected: validator error ({type(e).__name__})"
 
-        # Dangerous imports and calls to block
+    def _analyze_ast(self, code: str) -> str | None:
+        tree = ast.parse(code)  # SyntaxError propagates to _validate_ast
+
+        # Dangerous imports and calls to block.
+        #
+        # NOTE: this is an AST *blacklist*, which is bypassable by construction
+        # (see ADR 0008). It is best-effort containment of model-generated code
+        # for the single-user local CLI threat model — NOT a security boundary
+        # against an adversarial tenant. The list below closes the cheap,
+        # well-known escape routes; it cannot be made complete.
         dangerous_imports = {
             "os",
             "sys",
@@ -172,8 +220,60 @@ class PythonAnalysisTool(Tool):
             "telnetlib",
             "requests",
             "shutil",
+            # dynamic-import / FFI escape hatches: reachable via the blocked
+            # ``__import__`` but added explicitly so a clever alias
+            # (``import importlib``) is rejected at the import statement.
+            "importlib",
+            "ctypes",
+            "multiprocessing",
+            "builtins",
+            "pickle",
+            "marshal",
+            # ``operator.methodcaller``/``attrgetter`` reach methods/attributes
+            # by STRING, so they bypass every ast.Attribute check below (e.g.
+            # methodcaller('unlink')(path) reopens the closed file-method class).
+            # The ``operator`` module has near-zero legitimate data-analysis use.
+            "operator",
+            # ``inspect.currentframe().f_builtins`` is a full arbitrary-code
+            # escape (live builtins dict → __import__ → os). Blocked here at the
+            # source; the frame-attribute sink (f_builtins/gi_frame/...) is also
+            # blocked in the Attribute branch as belt-and-braces.
+            "inspect",
+            # Process-spawn / REPL-host modules: not plausible in analysis code,
+            # zero over-blocking risk, blocked as cheap defense-in-depth.
+            "pty",
+            "runpy",
+            "code",
+            "pdb",
         }
-        dangerous_calls = {"eval", "exec", "compile", "__import__"}
+        # Names that must not be *referenced at all* (not only called): an
+        # alias like ``g = getattr; g(...)`` or ``b = __builtins__`` defeats a
+        # call-only check. ``getattr``/``setattr``/``delattr`` are the classic
+        # dynamic-attribute family — ``getattr(builtins, "ev"+"al")`` string-
+        # concat-bypasses the Layer-1 substring blocklist, and ``setattr(x,
+        # "__class__", ...)`` reaches the dunder layer without an attribute
+        # access the dunder check can see. ``eval``/``exec``/``compile``/
+        # ``__import__`` are listed here (not a separate call-set) so both the
+        # call and any alias are rejected at the Name check.
+        dangerous_names = {
+            # ``_wrap_code`` preamble does ``import sys`` for stdout capture and
+            # leaks the name into user scope; ``sys.modules['os'].system(...)``
+            # is a full user-level ACE that ``import sys`` blocking alone does
+            # not stop. Block the Name reference too (``import sys`` is already
+            # in dangerous_imports). See ADR 0008 + test_sandbox_hardening.
+            "sys",
+            "getattr",
+            "setattr",
+            "delattr",
+            "globals",
+            "locals",
+            "vars",
+            "__builtins__",
+            "__import__",
+            "eval",
+            "exec",
+            "compile",
+        }
         dangerous_path_methods = {
             "open",
             "read_text",
@@ -187,8 +287,51 @@ class PythonAnalysisTool(Tool):
             "chmod",
         }
         data_read_calls = {"read_csv", "read_parquet", "read_excel", "read_json", "read_table"}
+        # Frame / code-object attributes are the SINK every reflection→ACE
+        # route funnels through: ``gen.gi_frame.f_builtins['__import__']('os')``,
+        # ``inspect.currentframe().f_builtins``, ``tb_frame``, etc. Blocking the
+        # sink (rather than every module that can reach a frame) is what actually
+        # shrinks the class — see ADR 0008. No legitimate data-analysis code
+        # touches these names.
+        frame_attrs = {
+            "f_builtins",
+            "f_globals",
+            "f_locals",
+            "f_back",
+            "f_code",
+            "gi_frame",
+            "cr_frame",
+            "ag_frame",
+            "tb_frame",
+            # code-object attrs of generators/coroutines/threads — symmetric with
+            # their *_frame siblings; no legit analysis code touches these.
+            "gi_code",
+            "cr_code",
+            "ag_code",
+            "tb_next",
+        }
+
+        # ``open`` may be CALLED directly (its path is then whitelist-checked by
+        # _validate_file_call) but never aliased or passed: ``f = open;
+        # f('/etc/passwd')`` would invoke the alias, which the Call branch below
+        # does not recognize, skipping the path whitelist entirely — the same
+        # aliasing class as getattr. Collect Name nodes used directly as a
+        # Call's function; any other reference to ``open`` is rejected.
+        direct_call_func_ids = {
+            id(n.func)
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        }
 
         for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id in dangerous_names:
+                return f"Reference to '{node.id}' is not allowed"
+            if (
+                isinstance(node, ast.Name)
+                and node.id == "open"
+                and id(node) not in direct_call_func_ids
+            ):
+                return "Reference to 'open' is not allowed (use a direct open(...) call)"
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     base = alias.name.split(".")[0]
@@ -200,8 +343,6 @@ class PythonAnalysisTool(Tool):
                     if base in dangerous_imports:
                         return f"Import from '{node.module}' is not allowed"
             elif isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id in dangerous_calls:
-                    return f"Call to '{node.func.id}' is not allowed"
                 if isinstance(node.func, ast.Name) and node.func.id == "open":
                     return self._validate_file_call("open", node)
                 if isinstance(node.func, ast.Name) and node.func.id == "Path":
@@ -215,8 +356,20 @@ class PythonAnalysisTool(Tool):
                         err = self._validate_first_path_argument(node.func.attr, node)
                         if err:
                             return err
-            elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
-                return f"Access to dunder attribute '{node.attr}' is not allowed"
+            elif isinstance(node, ast.Attribute):
+                # Filesystem methods are blocked even as a bare reference, not
+                # only as a direct call: ``f = io.open; f(path)`` or
+                # ``g = Path(x).read_bytes; g()`` would otherwise skip the
+                # Call-branch check (the attribute is the RHS of an assignment
+                # or a standalone expression, never a Call.func). Direct calls
+                # are already rejected in the Call branch above, so rejecting
+                # the reference form too loses no legitimate use.
+                if node.attr in dangerous_path_methods:
+                    return f"Reference to filesystem method '{node.attr}' is not allowed"
+                if node.attr in frame_attrs:
+                    return f"Reference to frame attribute '{node.attr}' is not allowed"
+                if node.attr.startswith("__"):
+                    return f"Access to dunder attribute '{node.attr}' is not allowed"
         return None
 
     def _validate_file_call(self, call_name: str, node: ast.Call) -> str | None:
@@ -230,6 +383,9 @@ class PythonAnalysisTool(Tool):
 
     def _validate_first_path_argument(self, call_name: str, node: ast.Call) -> str | None:
         """Validate absolute path literals passed to data/file helpers."""
+        if not node.args:
+            # Zero-arg forms (e.g. ``Path()`` for the cwd) have no path to check.
+            return None
         first_arg = node.args[0]
         if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
             return self._validate_path_literal(call_name, first_arg.value)
@@ -252,6 +408,12 @@ class PythonAnalysisTool(Tool):
         input_data: dict[str, Any],
         can_use_tool: CanUseToolFn | None = None,
     ) -> ToolResult:
+        # Invariant: the framework (tool gate) runs ``validate_input`` before
+        # dispatching here, so the AST/substring sandbox has already applied.
+        # ``call()`` intentionally does NOT re-validate: kernel-crash regression
+        # tests inject raw crash-inducing code (e.g. ``os._exit``) through this
+        # boundary on purpose. Any caller going directly through ``call()`` must
+        # validate first.
         code = input_data["code"]
         timeout = input_data.get("timeout", self.default_timeout)
 
@@ -325,6 +487,11 @@ class PythonAnalysisTool(Tool):
                     "HOME": cwd,
                     "TMPDIR": cwd,
                 },
+                # Best-effort caps on disk/CPU/address-space. No-op on the
+                # persistent-kernel path, which is bounded per-request by the
+                # manager's wall-clock timeout and the OS OOM killer instead
+                # (a persistent REPL legitimately accumulates large state).
+                preexec_fn=lambda: _apply_rlimits(timeout + 10),
             )
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
