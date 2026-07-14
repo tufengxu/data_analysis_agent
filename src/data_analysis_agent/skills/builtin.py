@@ -133,12 +133,21 @@ class ReportGenerationSkill(Skill):
             "missing_context (clarify or assume before rendering)\n"
             "4. Run the analysis: compute every statistic, aggregate and series with "
             "python_analysis (kernel state persists across calls — reuse variables "
-            "instead of reloading); print chart-ready data as compact JSON so you can "
-            "copy exact numbers into chart options\n"
-            "5. Call html_report ONCE with an executive summary plus one section per "
-            "finding; each chart is a full ECharts `option` object (set textStyle, axis "
-            "names and series names in the user's language); keep tables small (top-N "
-            "rows); tell the user the report file path returned by the tool\n"
+            "instead of reloading). Every number you cite in the report MUST come from "
+            "this step — never invent or round a figure.\n"
+            "5. Produce charts via chart_render (structured ChartSpec + data) — NOT "
+            "hand-written ECharts options. chart_render selects the right chart family "
+            "from the data shape and returns the ECharts option keyed by block_id.\n"
+            "6. Build a ReportDocument and call html_report ONCE with that `document` "
+            "(plus the charts map from step 5). Structure: executive_summary FIRST so "
+            "the conclusion leads, then findings each carrying evidence_refs to the "
+            "computed numbers, chart blocks referencing the chart_render block_ids, a "
+            "recommendation with evidence_refs, a caveat for partial-period or "
+            "observational limits, and data_scope naming file/sheet/period/row count. "
+            "The QA gate REFUSES a DRAFT report (missing contract / executive summary / "
+            "data_scope / chart spec); if html_report returns an error, fix the listed "
+            "blockers and call it again. Tell the user the report file path. Hard rule: "
+            "no contract, no render.\n"
         )
 
     @property
@@ -184,6 +193,7 @@ class ReportGenerationSkill(Skill):
             "report_contract",
             "python_analysis",
             "retrieve_result",
+            "chart_render",
             "visualization",
             "html_report",
         ]
