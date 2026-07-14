@@ -304,6 +304,15 @@ class ContextCollapseStrategy:
         self.staged_indices = {idx for _, _, idx in scored[:keep_n]}
 
     def apply(self, messages: list[Message], budget: int) -> CompressionResult:
+        # Re-stage on the list we actually receive. Earlier pipeline strategies
+        # (Snip removes oldest; Microcompact merges adjacent) mutate the list
+        # before we run, so indices staged on the pre-pipeline list can shift
+        # onto a different message — including an assistant tool_use message
+        # (which stage_candidates deliberately skips): collapsing that to a
+        # placeholder would orphan its tool_result and trigger an API 400.
+        # stage_candidates is idempotent and clears prior staging, so this is
+        # both cheap and always consistent with the list we collapse.
+        self.stage_candidates(messages)
         if not self.staged_indices:
             return CompressionResult(messages=messages)
 

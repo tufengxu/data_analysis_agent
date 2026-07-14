@@ -95,3 +95,41 @@ def test_page_byte_cap(tmp_path):
     assert page is not None
     assert page.truncated is True
     assert len(page.text) < 8000  # stays under trigger_chars so it isn't re-summarized
+
+
+def test_index_rewrite_is_atomic_on_failed_replace(tmp_path, monkeypatch):
+    """Crash-safety: if the atomic replace fails, the on-disk index must stay
+    at its last good state — never truncated to a half-written file (which
+    would orphan every result_id)."""
+    import os
+
+    store = _store(tmp_path)
+    assert store.put("r1", "hello\n", {"tool": "t"})
+    index_path = tmp_path / "results" / "index.jsonl"
+    snapshot = index_path.read_text(encoding="utf-8")
+
+    def _fail(src, dst):
+        raise OSError("simulated mid-replace crash")
+
+    monkeypatch.setattr(os, "replace", _fail)
+    # In-memory mutation + rewrite attempt; replace fails, so the rewrite is
+    # absorbed and the real index file is left untouched.
+    store._index["r2"] = store._index["r1"]
+    store._rewrite_index()
+    monkeypatch.undo()
+
+    assert index_path.read_text(encoding="utf-8") == snapshot  # prior file intact
+    assert not (tmp_path / "results" / "index.jsonl.tmp").exists()  # tmp cleaned up
+    # And the store still serves the previously-written result.
+    assert store.get("r1") is not None
+
+
+def test_index_rewrite_no_tmp_left_after_success(tmp_path):
+    """On a successful rewrite no .tmp file lingers and the index is complete."""
+    store = _store(tmp_path)
+    store.put("a", "1\n", {"tool": "t"})
+    store.put("b", "2\n", {"tool": "t"})
+    tmp = tmp_path / "results" / "index.jsonl.tmp"
+    assert not tmp.exists()
+    lines = (tmp_path / "results" / "index.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2  # both records persisted

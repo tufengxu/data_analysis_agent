@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -86,9 +87,25 @@ class ResultStore:
                 self._index[rid] = rec  # last write wins
 
     def _rewrite_index(self) -> None:
-        with self.index_path.open("w", encoding="utf-8") as fh:
-            for rec in self._index.values():
-                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        # Atomic rewrite (tmp + os.replace): a crash mid-rewrite leaves the
+        # previous index intact rather than truncating it to a half-written
+        # file (which would orphan every result_id -> retrieve_result all miss).
+        # Mirrors the JsonlStore.rewrite guarantee this module pre-dated.
+        #
+        # Note: the OSError is swallowed here (after cleaning up the tmp file)
+        # rather than raised. A read-only filesystem therefore no longer flips
+        # _available to False via this path — but that is benign: put() still
+        # returns False because the per-entry data write fails first, and get()
+        # keeps serving previously-cached results instead of going dark.
+        tmp = self.index_path.with_name(self.index_path.name + ".tmp")
+        try:
+            with tmp.open("w", encoding="utf-8") as fh:
+                for rec in self._index.values():
+                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            os.replace(tmp, self.index_path)
+        except OSError:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
 
     def _drop(self, result_id: str) -> None:
         rec = self._index.pop(result_id, None)

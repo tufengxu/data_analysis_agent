@@ -5,6 +5,7 @@ from data_analysis_agent.context.compression import (
     AutoCompactStrategy,
     BudgetReductionStrategy,
     ContextCollapseStrategy,
+    ContextCompressor,
     SnipStrategy,
     estimate_tokens,
 )
@@ -148,6 +149,65 @@ def test_collapse_staging_replaces_previous_staging():
     strategy.stage_candidates(short)
     assert 4 not in strategy.staged_indices  # stale index from the prior turn dropped
     assert all(idx < 3 for idx in strategy.staged_indices)
+
+
+def test_collapse_restages_on_apply_when_list_shifted():
+    """C3 regression: apply must re-stage on the list it receives, not trust
+    indices staged on an earlier (pre-Snip/Microcompact) list. Otherwise a
+    shifted stale index can land on an assistant tool_use message and, via the
+    else-branch placeholder, orphan its tool_result (API 400)."""
+    original = [
+        Message(role="user", content="q"),
+        Message(role="user", content="s"),
+        Message(role="user", content="X" * 9_000),  # idx 2 heavy -> staged
+        Message(role="assistant", content="a"),
+        Message(role="user", content="t1"),
+        Message(role="assistant", content="t2"),
+    ]
+    strategy = ContextCollapseStrategy()
+    strategy.stage_candidates(original)
+    assert 2 in strategy.staged_indices
+
+    # Same length, but index 2 is now an assistant tool_use message. A stale
+    # index 2 would replace it with a placeholder and orphan the tool_result.
+    shifted = [
+        Message(role="user", content="s"),
+        Message(role="assistant", content="a"),
+        _tool_use_msg("tu_shift"),
+        _tool_result_msg("tu_shift"),
+        Message(role="user", content="t1"),
+        Message(role="assistant", content="t2"),
+    ]
+    result = strategy.apply(shifted, budget=0)
+
+    assert not _window_has_orphan_result(result.messages)
+    tool_use_survived = any(
+        isinstance(m.content, list) and any(b.get("type") == "tool_use" for b in m.content)
+        for m in result.messages
+    )
+    assert tool_use_survived  # the stale index did NOT collapse the tool_use
+
+
+def test_compress_snip_then_collapse_preserves_tool_pair():
+    """Safety net (NOT the C3 regression lock): exercises the full compress()
+    pipeline (Snip -> Microcompact -> Collapse -> AutoCompact) with a tool pair
+    present and asserts the final window has no orphan tool_result. The decisive
+    C3 regression is test_collapse_restages_on_apply_when_list_shifted above
+    (which fails on the unfixed code); this test can pass on unfixed code too
+    because AutoCompact folds orphaned pairs out of the final window, so it only
+    guards against future regressions that escape that backstop."""
+    # >200-char fillers so Microcompact (merges <200-char same-role neighbours)
+    # is a no-op and the Snip shift is the only index mutation.
+    fillers = [Message(role="user", content=f"filler content line {i} " * 12) for i in range(43)]
+    fillers[20] = Message(role="user", content="HEAVY " * 2000)  # staged at idx 20
+    # Place the tool pair at original 23/24 -> after Snip cut=3, shifted idx 20
+    # is original idx 23 (the tool_use).
+    fillers[23] = _tool_use_msg("tu_snip")
+    fillers[24] = _tool_result_msg("tu_snip")
+    compressor = ContextCompressor(budget_tokens=400, enable_snip=True, enable_collapse=True)
+    compressor.stage_collapse(fillers)  # simulates agent_loop's pre-compress staging
+    result = compressor.compress(fillers)
+    assert not _window_has_orphan_result(result.messages)
 
 
 # --- AutoCompact -----------------------------------------------------------

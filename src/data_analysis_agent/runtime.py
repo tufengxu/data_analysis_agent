@@ -93,7 +93,7 @@ def build_registry(
     sampling_config = config.sampling_config() if config else None
     echarts_src = config.echarts_src if config else None
     paths = list(analysis_paths) if analysis_paths else None
-    registry.register(FileReadTool())
+    registry.register(FileReadTool(allowed_paths=paths))
     registry.register(DataProfileTool(allowed_paths=paths))
     registry.register(
         PythonAnalysisTool(
