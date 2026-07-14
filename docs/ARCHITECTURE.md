@@ -77,6 +77,7 @@ src/data_analysis_agent/tools/causal_contract.py = "causal_contract 只读工具
 src/data_analysis_agent/tools/causal_qa.py = "causal_qa 只读工具:CausalContract → CausalQAReport(6 态就绪 + 闭词汇 finding,封装 causal.qa;观察性永不 EXPERIMENT_READY)"
 src/data_analysis_agent/tools/experiment_readout.py = "experiment_readout 只读工具:records/columns → ExperimentReadout(效应/SRM/护栏/有界决策,封装 causal.experiment;正态近似 z 检验)"
 src/data_analysis_agent/tools/causal_action_plan.py = "causal_action_plan 只读工具:ExperimentReadout → ActionPlan(机制/假设/监控/回滚/反驳;SRM/退化不升 ship,封装 causal.experiment.build_action_plan)"
+src/data_analysis_agent/tools/causal_report.py = "causal_report 只读工具:contract+qa+readout(+action_plan) → ReportDocument(FINDING 紧跟 CAVEAT + 中性措辞,封装 causal.report_adapter.to_report_document;让 causal 结果经 QA 闸进 html_report v2)"
 src/data_analysis_agent/tools/chart_render.py = "chart_render 工具:结构化 ChartSpec+数据 → ECharts option+JSON artifact(按图族生成 + 数据充分性 + fallback,非只读)"
 src/data_analysis_agent/skills/base.py = "Skill 抽象基类"
 src/data_analysis_agent/skills/registry.py = "技能注册 + 关键词匹配 + 优先级路由"

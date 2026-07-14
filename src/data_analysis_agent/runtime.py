@@ -45,6 +45,7 @@ from .tools import (
     CausalActionPlanTool,
     CausalContractTool,
     CausalQATool,
+    CausalReportTool,
     ChartRenderTool,
     DataProfileTool,
     ExperimentReadoutTool,
@@ -73,6 +74,7 @@ READ_ONLY_TOOLS = (
     "causal_qa",
     "experiment_readout",
     "causal_action_plan",
+    "causal_report",
 )
 
 
@@ -114,6 +116,7 @@ def build_registry(
     registry.register(CausalQATool())
     registry.register(ExperimentReadoutTool())
     registry.register(CausalActionPlanTool())
+    registry.register(CausalReportTool())
     registry.register(ChartRenderTool(artifact_dir=artifact_dir))
 
     if config:

@@ -44,10 +44,13 @@ class CausalDecisionAnalysisSkill(Skill):
             "experiment design; do NOT report a causal effect number\n"
             "7. Run causal_action_plan for a bounded recommendation with mechanism / evidence / "
             "assumptions / monitoring / rollback\n"
-            "8. When rendering with html_report, place a CAVEAT block immediately after every causal "
-            "FINDING; use neutral phrasing (difference of / lift of / associated with) in findings and "
-            "reserve causal language for caveat / assumption blocks\n"
-            "9. FORBIDDEN: treating correlation as causation, and using LLM judgment as the sole "
+            "8. Run causal_report to build a ReportDocument from the contract + qa + readout (+ "
+            "action plan); it places a CAVEAT immediately after every causal FINDING and uses neutral "
+            "phrasing (difference of / lift of / associated with) in findings, reserving causal "
+            "language for caveat / assumption blocks\n"
+            "9. Pass that `document` to html_report(document=...) so it goes through the QA gate; "
+            "fix any blocker it lists. Do not hand-assemble causal blocks — use causal_report.\n"
+            "10. FORBIDDEN: treating correlation as causation, and using LLM judgment as the sole "
             "causal-readiness gate\n"
         )
 
@@ -89,6 +92,7 @@ class CausalDecisionAnalysisSkill(Skill):
             "causal_qa",
             "experiment_readout",
             "causal_action_plan",
+            "causal_report",
             "python_analysis",
             "html_report",
         ]

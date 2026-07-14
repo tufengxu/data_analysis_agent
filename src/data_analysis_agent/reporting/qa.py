@@ -203,6 +203,27 @@ def _check_finding_evidence(document: ReportDocument) -> list[QAFinding]:
     return out
 
 
+def _check_evidence_refs_nonempty(document: ReportDocument) -> list[QAFinding]:
+    # An empty/whitespace evidence_ref ("") would satisfy `not b.evidence_refs`
+    # (non-empty tuple) while providing no real source — a fake-evidence bypass
+    # of the anti-entropy guarantee. Flag any such ref as HIGH.
+    out: list[QAFinding] = []
+    for b in document.blocks:
+        if not b.evidence_refs:
+            continue
+        if any(not isinstance(r, str) or not r.strip() for r in b.evidence_refs):
+            out.append(
+                QAFinding(
+                    Severity.HIGH,
+                    "evidence.empty_ref",
+                    "证据引用含空字符串(无效溯源)",
+                    b.block_id,
+                    "移除空 evidence_refs 或填入真实来源 id",
+                )
+            )
+    return out
+
+
 def _check_chart_blocks(document: ReportDocument) -> list[QAFinding]:
     out: list[QAFinding] = []
     for b in document.blocks:
@@ -520,6 +541,7 @@ def run_qa(
     findings.extend(_check_direct_answer(document))
     findings.extend(_check_data_scope(document))
     findings.extend(_check_finding_evidence(document))
+    findings.extend(_check_evidence_refs_nonempty(document))
     findings.extend(_check_chart_blocks(document))
     findings.extend(_check_section_mapping(document))
     findings.extend(_check_metric_definitions(contract))

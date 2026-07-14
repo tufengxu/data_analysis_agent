@@ -4,6 +4,7 @@ from .base import CanUseToolFn, PermissionResult, Tool, ToolResult, ValidationRe
 from .causal_action_plan import CausalActionPlanTool
 from .causal_contract import CausalContractTool
 from .causal_qa import CausalQATool
+from .causal_report import CausalReportTool
 from .chart_render import ChartRenderTool
 from .data_profile import DataProfileTool
 from .experiment_readout import ExperimentReadoutTool
@@ -22,6 +23,7 @@ __all__ = [
     "CausalActionPlanTool",
     "CausalContractTool",
     "CausalQATool",
+    "CausalReportTool",
     "ChartRenderTool",
     "DataProfileTool",
     "ExperimentReadoutTool",
