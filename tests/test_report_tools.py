@@ -200,3 +200,25 @@ async def test_report_contract_populates_dimensions_and_grain():
     contract = result.metadata["contract"]
     assert contract["business_grain"] == "order"
     assert "channel" in contract["dimensions"]  # object 列归 dimension
+
+
+async def test_report_contract_surfaces_template_for_known_type():
+    """A known report_type (daily_kpi) selects a template; its section-role spine
+    + required_caveats are surfaced in metadata + render so the model can build a
+    conforming ReportDocument (wires templates.select_template live)."""
+    result = await ReportContractTool().call(
+        {"question": "今日销售日报", "report_type": "daily_kpi"}
+    )
+    assert "template" in result.metadata
+    tpl = result.metadata["template"]
+    roles = set(tpl["section_roles"])
+    assert "kpi_strip" in roles  # daily KPI template mandates a KPI strip
+    assert "partial_period" in tpl["required_caveats"]
+    assert "section_roles:" in result.content  # surfaced in the render too
+
+
+async def test_report_contract_no_template_for_ad_hoc():
+    """AD_HOC (no recognizable report type) -> no template in metadata."""
+    result = await ReportContractTool().call({"question": "explore this dataset"})
+    assert "template" not in result.metadata
+    assert "section_roles:" not in result.content
