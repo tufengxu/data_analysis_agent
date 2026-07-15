@@ -50,6 +50,16 @@ def _drift() -> tuple[bool, str]:
     return (not problems), "\n".join(msg_parts).strip()
 
 
+def _eval() -> tuple[bool, str]:
+    # Deterministic structural eval-task gate (no LLM): schema, >=20 tasks,
+    # >=3 domains, ADR 0005 assertion-key whitelist. Cheap; catches regressions
+    # where the eval corpus shrinks or a value-pinned/invalid assertion sneaks in.
+    import eval_gate  # local: scripts dir is on sys.path
+
+    ok, errors = eval_gate.run_gate(REPO / "examples" / "eval_tasks")
+    return ok, "\n".join(errors)
+
+
 def run_gate() -> tuple[bool, list[dict[str, object]]]:
     steps: list[tuple[str, object]] = [
         ("ruff", lambda: _run([str(BIN / "ruff"), "check", "src", "tests", "scripts"])),
@@ -60,6 +70,7 @@ def run_gate() -> tuple[bool, list[dict[str, object]]]:
         ("mypy", lambda: _run([str(BIN / "mypy"), "src"])),
         ("pytest", lambda: _run([str(BIN / "pytest"), "tests/", "-q"])),
         ("drift", _drift),
+        ("eval", _eval),
     ]
     results: list[dict[str, object]] = []
     for name, fn in steps:

@@ -140,9 +140,19 @@ def test_evaluator_promotes_and_rewrites_status(tmp_path):
     assert verdict["decision"] == "promote"
     evaluator.apply(verdict)
 
-    promoted = load_skills(skills_dir, statuses=("active",))
-    assert [s.name for s in promoted] == ["cohort_analysis"]
-    assert promoted[0].eval_score == 1.0
+    # Phase 1 governance: promote -> proposed_promote, NOT active (no auto-promotion;
+    # a human must run `evolution approve`). The live registry (active) stays empty.
+    proposed = load_skills(skills_dir, statuses=("proposed_promote",))
+    assert [s.name for s in proposed] == ["cohort_analysis"]
+    assert proposed[0].eval_score == 1.0
+    assert load_skills(skills_dir, statuses=("active",)) == []
+
+    # The human gate (approve) is the only path to active.
+    from data_analysis_agent.evolution.evaluator import approve_skill
+
+    assert approve_skill(skills_dir, "cohort_analysis") == 0
+    active = load_skills(skills_dir, statuses=("active",))
+    assert [s.name for s in active] == ["cohort_analysis"]
 
 
 def test_evaluator_needs_review_keeps_candidate(tmp_path):

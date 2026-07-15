@@ -29,9 +29,11 @@ logger = logging.getLogger(__name__)
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]+")
 
 # Lifecycle: a candidate (synthesized, unproven) is loaded only when explicitly
-# requested; active is loaded into the live registry; retired is kept for audit.
-SkillStatus = Literal["candidate", "active", "retired"]
-SKILL_STATUSES: tuple[SkillStatus, ...] = ("candidate", "active", "retired")
+# requested; proposed_promote = passed eval but awaiting explicit human approval
+# (Phase 1: NO auto-promotion — roadmap non-goal); active is loaded into the live
+# registry; retired is kept for audit.
+SkillStatus = Literal["candidate", "proposed_promote", "active", "retired"]
+SKILL_STATUSES: tuple[SkillStatus, ...] = ("candidate", "proposed_promote", "active", "retired")
 
 
 class DeclarativeSkill(Skill):
