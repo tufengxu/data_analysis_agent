@@ -1,0 +1,17 @@
+{
+  "task_id": "numeric_anchor_revenue_sum",
+  "input": "读取 fixtures/revenue.csv,用 python_analysis 计算全部订单的 revenue 总额,并简述结果。",
+  "dataset_fixture": "fixtures/revenue.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "required_tools": ["python_analysis"],
+    "numeric_anchor": [
+      {
+        "value": 5000,
+        "tolerance": 0.001,
+        "label": "revenue 总额 = 5000"
+      }
+    ]
+  }
+}
