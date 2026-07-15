@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 # ADR 0005:允许的断言键(全 method/structure-only)。键白名单 = 拒绝任何数值等式断言。
+# 例外:numeric_anchor —— 冻结 fixture 上的数值锚(validate_task 强制要求 dataset_fixture)。
 _ALLOWED_ASSERTION_KEYS = frozenset(
     {
         "no_error_results",
@@ -30,6 +31,7 @@ _ALLOWED_ASSERTION_KEYS = frozenset(
         "required_tools",
         "artifact_produced",
         "artifact_has_sections",
+        "numeric_anchor",
     }
 )
 
@@ -81,6 +83,51 @@ def _scan_value_pins(assertions: dict) -> list[str]:
     return pins
 
 
+def _is_number(x: object) -> bool:
+    """True for real int/float — bool excluded (it subclasses int)."""
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _validate_numeric_anchor(rec: dict, assertions: dict) -> list[str]:
+    """ADR 0005 scoped exemption: ``numeric_anchor`` is the one value-assertion
+    allowed, and ONLY on a frozen-fixture task. Enforce both the fixture
+    requirement and the anchor shape so a malformed anchor fails the gate loudly
+    instead of crashing ``check_assertions`` at run time.
+
+    The value-pin scan (``_scan_value_pins``) deliberately does NOT scan
+    ``numeric_anchor`` — the anchor's own ``value`` is supposed to be a number, so
+    pinning it is the intent, not a violation.
+    """
+    errors: list[str] = []
+    anchors = assertions.get("numeric_anchor")
+    if anchors is None:
+        return errors
+    fixture = rec.get("dataset_fixture")
+    if not isinstance(fixture, str) or not fixture:
+        errors.append(
+            "numeric_anchor requires a string dataset_fixture "
+            "(ADR 0005: only frozen data may be value-anchored)"
+        )
+    anchor_list = [anchors] if isinstance(anchors, dict) else anchors
+    if not isinstance(anchor_list, list):
+        errors.append("numeric_anchor must be a list of objects (or a single object)")
+        return errors
+    for i, anchor in enumerate(anchor_list):
+        if not isinstance(anchor, dict):
+            errors.append(f"numeric_anchor[{i}] must be an object")
+            continue
+        value = anchor.get("value")
+        tolerance = anchor.get("tolerance")
+        if not _is_number(value):
+            errors.append(f"numeric_anchor[{i}].value must be a number")
+        if not _is_number(tolerance) or tolerance < 0:
+            errors.append(f"numeric_anchor[{i}].tolerance must be a non-negative number")
+        label = anchor.get("label")
+        if label is not None and not isinstance(label, str):
+            errors.append(f"numeric_anchor[{i}].label must be a string")
+    return errors
+
+
 def validate_task(rec: dict) -> list[str]:
     """校验单个 eval 任务文件的 schema + ADR 0005 键白名单。"""
     errors: list[str] = []
@@ -96,6 +143,7 @@ def validate_task(rec: dict) -> list[str]:
         if key not in _ALLOWED_ASSERTION_KEYS:
             errors.append(f"non-whitelisted assertion key (ADR 0005): {key}")
     errors.extend(_scan_value_pins(assertions))  # ADR 0005 值级:比较运算符+数字
+    errors.extend(_validate_numeric_anchor(rec, assertions))  # ADR 0005 例外:冻结 fixture 数值锚
     return errors
 
 

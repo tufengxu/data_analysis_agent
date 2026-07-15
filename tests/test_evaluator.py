@@ -211,6 +211,47 @@ def test_evaluator_isolates_run_fn_crash(tmp_path):
     assert verdict["decision"] == "retire"  # all runs failed → no promotion
 
 
+def test_run_rejects_numeric_anchor_without_fixture(tmp_path):
+    """M3 defense-in-depth: a fixture-less numeric_anchor fails at runtime even
+    when computed_outputs contain the anchored value — closes the
+    ~/.daa/eval_tasks bypass of the gate's fixture discipline (the evaluator
+    loads dirs the gate never scans)."""
+    task = EvalTask(
+        "leak",
+        "算 revenue 总额",
+        assertions={"numeric_anchor": [{"value": 5000, "tolerance": 0.001}]},
+        dataset_fixture=None,
+    )
+    # run_fn returns a run that WOULD pass the anchor (5000 present) — but the
+    # missing fixture must still fail it at the _run layer.
+    evaluator = SkillEvaluator(
+        tmp_path / "tasks",
+        tmp_path / "skills",
+        lambda t, s: EvalRun(1, False, "ok", computed_outputs=("总额 5000",)),
+    )
+    result = evaluator._run(task, None)
+    assert not result.passed
+    assert any("requires dataset_fixture" in f for f in result.failures)
+
+
+def test_run_numeric_anchor_with_fixture_passes_on_value(tmp_path):
+    """Counterpart: with a fixture, the runtime guard stays out of the way and the
+    anchor's own value check decides pass/fail (positive case)."""
+    task = EvalTask(
+        "ok",
+        "算 revenue 总额",
+        assertions={"numeric_anchor": [{"value": 5000, "tolerance": 0.001}]},
+        dataset_fixture="fixtures/revenue.csv",
+    )
+    evaluator = SkillEvaluator(
+        tmp_path / "tasks",
+        tmp_path / "skills",
+        lambda t, s: EvalRun(1, False, "ok", computed_outputs=("总额 5000",)),
+    )
+    result = evaluator._run(task, None)
+    assert result.passed and result.failures == []
+
+
 def test_check_assertions_bare_string_contains():
     """n3 regression: a bare string for final_text_contains must not iterate per-char."""
     ok, _ = check_assertions(

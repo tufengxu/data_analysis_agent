@@ -29,6 +29,33 @@ logger = logging.getLogger(__name__)
 
 MIN_SAMPLES = 5
 
+# Wave 8 — frozen-fixture numeric anchors (scoped ADR 0005 exemption).
+# A live dataset drifts, so asserting a specific number would rot (ADR 0005).
+# A *frozen* fixture does not drift, so anchoring a computed value against it is
+# the one value-assertion ADR 0005 permits: it closes the "runs clean / calls the
+# right tools / produces a report — but computes the wrong number" gap for exactly
+# the cases where it is safe. ``check_assertions`` extracts these numbers from the
+# captured ``python_analysis`` output; ``eval_gate`` restricts the anchor to
+# fixture-backed tasks.
+_COMPUTED_OUTPUT_CAP = 20_000  # per-capture char cap on a python_analysis result
+_MAX_COMPUTED_OUTPUTS = 200  # cap on capture count (bound EvalRun memory; in
+# practice tool_call_count_max is far smaller)
+# Sign-aware number extraction. A leading '-' binds ONLY when it is a sign, not a
+# range/subtraction/date hyphen: the optional '-' is gated by a negative lookbehind
+# so it attaches solely when not preceded by a word char or dot. Bare digits match
+# regardless of the preceding char, so CJK-no-space output like "总额5000" still
+# parses. Without sign capture a confidently-wrong "-5000" would parse as 5000 and
+# silently pass a {value: 5000} anchor — the exact error this feature exists for.
+# Known false-negatives (correct output formatted differently may miss the anchor):
+# sci-notation ("5e3"), thousands separators ("5,000"), bare decimals (".5").
+_NUMERIC_VALUE_RE = re.compile(r"(?:(?<![\w.])-)?\d+(?:\.\d+)?")
+_NUMERIC_ABS_FLOOR = 1e-9  # value≈0 guard: relative window collapses → abs floor
+# The tool whose result text we capture for numeric anchors. Kept as a literal
+# (not imported from tools/) to avoid a new evolution→tools dependency; a rename
+# would surface as empty captures → anchor failures, not a silent regression.
+_PYTHON_ANALYSIS_TOOL = "python_analysis"
+
+
 # (task, skill_or_None) -> observed run. skill=None is the control arm.
 RunFn = Callable[["EvalTask", "Skill | None"], "EvalRun"]
 
@@ -43,7 +70,13 @@ class EvalTask:
 
 @dataclass
 class EvalRun:
-    """What was observed running one task (no numeric claims, by design)."""
+    """What was observed running one task (no numeric claims, by design).
+
+    The one exception is ``computed_outputs``: the ``python_analysis`` tool-result
+    text captured during the run. It carries NO assertion by itself — it is raw
+    material that a frozen-fixture ``numeric_anchor`` assertion (evaluator) parses
+    numbers out of. ADR 0005 still holds for every other task.
+    """
 
     tool_call_count: int
     has_error: bool
@@ -51,6 +84,9 @@ class EvalRun:
     tools_used: tuple[str, ...] = ()  # Wave 7: tool names from ToolResultEvent
     artifact_paths: tuple[str, ...] = ()  # Wave 7: persisted artifact paths
     artifact_sections: tuple[str, ...] = ()  # Wave 7.5: HTML section markers
+    # Wave 8: concatenated python_analysis result contents (each capped). Raw
+    # capture only — only consulted when an assertion opts in via numeric_anchor.
+    computed_outputs: tuple[str, ...] = ()
 
 
 @dataclass
@@ -83,8 +119,44 @@ def load_eval_tasks(tasks_dir: str | Path) -> list[EvalTask]:
     return tasks
 
 
+def _numeric_anchor_failure(anchor: Any, parsed: list[float]) -> str | None:
+    """Return a failure string if no parsed value satisfies ``anchor``, else None.
+
+    The match window is ``abs(value) * tolerance`` (relative) with an absolute
+    floor (``_NUMERIC_ABS_FLOOR``) so a ``value≈0`` anchor is still satisfiable —
+    otherwise the relative window would collapse to 0 and make the check impossible.
+    A malformed anchor (non-numeric value/tolerance) is reported as a failure
+    rather than raising, so one bad anchor can't crash the whole assertion pass.
+    """
+    if not isinstance(anchor, dict):
+        return f"numeric anchor entry must be an object: {anchor!r}"
+    value = anchor.get("value")
+    tolerance = anchor.get("tolerance", 0.0)
+    # bool subclasses int — reject it so `value: true` can't pose as a number.
+    # Inline isinstance (not a helper) so mypy narrows value/tolerance to numbers.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return f"numeric anchor malformed (value must be a number): {anchor!r}"
+    if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)):
+        return f"numeric anchor malformed (tolerance must be a number): {anchor!r}"
+    window = max(abs(value) * tolerance, _NUMERIC_ABS_FLOOR)
+    if any(abs(p - value) <= window for p in parsed):
+        return None
+    label = anchor.get("label")
+    tag = f": {label}" if isinstance(label, str) and label else ""
+    return (
+        f"numeric anchor not found{tag}: no parsed value within tolerance "
+        f"{tolerance} of {value} (±{window:.4g})"
+    )
+
+
 def check_assertions(run: EvalRun, assertions: dict[str, Any]) -> tuple[bool, list[str]]:
-    """Method/structure checks only — never assert a specific numeric value."""
+    """Method/structure checks only — never assert a specific numeric value.
+
+    The single exception: a ``numeric_anchor`` on a frozen-fixture task (the gate
+    enforces the fixture requirement). It parses numbers out of the run's captured
+    ``python_analysis`` output and requires at least one parsed value within the
+    anchor's tolerance — a deterministic float check, no LLM judge (ADR 0005).
+    """
     failures: list[str] = []
     if assertions.get("no_error_results") and run.has_error:
         failures.append("a tool result was an error")
@@ -118,6 +190,20 @@ def check_assertions(run: EvalRun, assertions: dict[str, Any]) -> tuple[bool, li
         for section in required_sections:
             if section not in run.artifact_sections:
                 failures.append(f"artifact section missing: {section}")
+    # Wave 8: frozen-fixture numeric anchor (ADR 0005 scoped exemption). Parses
+    # numbers out of the captured python_analysis output and requires ≥1 within
+    # each anchor's tolerance. Only fires when the task opts in via this key; the
+    # gate (eval_gate) guarantees such a task has a dataset_fixture.
+    anchors = assertions.get("numeric_anchor")
+    if isinstance(anchors, dict):  # bare-object guard (coerce, don't iterate per-key)
+        anchors = [anchors]
+    if isinstance(anchors, list):
+        blob = "\n".join(run.computed_outputs)
+        parsed = [float(m) for m in _NUMERIC_VALUE_RE.findall(blob)]
+        for anchor in anchors:
+            msg = _numeric_anchor_failure(anchor, parsed)
+            if msg is not None:
+                failures.append(msg)
     return (not failures, failures)
 
 
@@ -223,6 +309,18 @@ class SkillEvaluator:
             )
             run = EvalRun(tool_call_count=0, has_error=True, final_text="")
         passed, failures = check_assertions(run, task.assertions)
+        # ADR 0005 defense-in-depth: the gate enforces fixture backing for shipped
+        # tasks, but the evaluator also loads harvested/user tasks from
+        # config.eval_tasks_dir() (~/.daa/eval_tasks) that never pass through the
+        # gate. Guard here so a fixture-less numeric_anchor can't anchor a
+        # non-frozen value at runtime.
+        if (
+            isinstance(task.assertions, dict)
+            and "numeric_anchor" in task.assertions
+            and not task.dataset_fixture
+        ):
+            failures.append("numeric_anchor requires dataset_fixture (ADR 0005)")
+            passed = False
         return EvalResult(task.task_id, passed, failures, run.tool_call_count)
 
     def apply(self, verdict: dict[str, Any]) -> Path | None:
@@ -272,6 +370,19 @@ def eval_config_for(base: Any) -> Any:
     )
 
 
+def _capture_python_analysis(tool_name: str, content: str, is_error: bool) -> str | None:
+    """Return the capped python_analysis result text to capture, else None.
+
+    Pure/testable extraction of the per-event capture (Part 2): only a SUCCESSFUL
+    python_analysis result contributes its content — an error trace is not a
+    computed value, and other tools are irrelevant to numeric anchors. Capped per
+    capture so one runaway result can't dominate ``computed_outputs``.
+    """
+    if tool_name == _PYTHON_ANALYSIS_TOOL and content and not is_error:
+        return content[:_COMPUTED_OUTPUT_CAP]
+    return None
+
+
 def make_agent_run_fn(client: Any, *, allowed_paths: list[str | Path], config: Any = None) -> RunFn:
     """Build a run_fn that runs a task on the SAME agent production assembles.
 
@@ -303,6 +414,7 @@ def make_agent_run_fn(client: Any, *, allowed_paths: list[str | Path], config: A
             final = ""
             tools_used: list[str] = []
             artifact_paths: list[str] = []
+            computed_outputs: list[str] = []  # Wave 8: python_analysis result text
             try:
                 async for event in runtime.loop.run(effective_input):
                     if isinstance(event, ToolResultEvent):
@@ -311,6 +423,17 @@ def make_agent_run_fn(client: Any, *, allowed_paths: list[str | Path], config: A
                         if event.tool_name:
                             tools_used.append(event.tool_name)
                         artifact_paths.extend(event.artifacts)
+                        # Wave 8: capture python_analysis result content (capped)
+                        # so a frozen-fixture numeric_anchor can parse numbers out
+                        # of what the agent actually computed. Extraction lives in
+                        # _capture_python_analysis (unit-tested); the count cap
+                        # bounds EvalRun memory.
+                        if len(computed_outputs) < _MAX_COMPUTED_OUTPUTS:
+                            captured = _capture_python_analysis(
+                                event.tool_name, event.content, event.is_error
+                            )
+                            if captured is not None:
+                                computed_outputs.append(captured)
                     elif isinstance(event, CompleteEvent):
                         final = event.final_text
                 # Wave 7.5: extract HTML section markers from first artifact
@@ -339,6 +462,7 @@ def make_agent_run_fn(client: Any, *, allowed_paths: list[str | Path], config: A
                     tuple(tools_used),
                     tuple(artifact_paths),
                     tuple(artifact_sections),
+                    tuple(computed_outputs),
                 )
             finally:
                 await runtime.shutdown()  # release the per-task runtime (kernel, etc.)

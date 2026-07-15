@@ -33,3 +33,23 @@ promote/rollback),但加两条数据分析特化约束:
 核心逻辑(check_assertions/decide_promotion/relevant_tasks)纯函数可测,真跑经注入式
 `run_fn`(默认装配轻量 stateless agent)。CLI:`python -m data_analysis_agent.evolution
 evaluate`。未来可选:为 `quality_gate.py` 增设 eval 阶段,使行为回归与代码回归同闸(当前未接入)。
+
+## 补充 — 冻结 fixture 数值锚(Addendum, 2026-07-15)
+
+「断言验证方法非数值」的红线针对**会漂移的活数据**:活数据下 `留存率==12%` 会随数据变动
+失效,故禁。但一项 eval 任务若带 `dataset_fixture`(冻结数据),该数据**不漂移**,在其上
+锚定一个计算值就不是「钉死易腐的数」,而是「对一份永不改变的输入校验确定性结果」——这是
+红线的**意图合规**(intent-compliant)例外,不是放弃红线。
+
+落地(design: `docs/superpowers/specs/2026-07-15-eval-numeric-anchors-design.md`):
+
+- `EvalRun.computed_outputs`:捕获本次运行中 `python_analysis` 工具结果文本(原始素材,
+  本身不构成任何断言)。
+- `numeric_anchor` 断言:从 `computed_outputs` 解析数值,要求至少一个落在
+  `abs(value) * tolerance` 窗口内(value≈0 用绝对地板兜底)。确定性浮点比较,**无 LLM judge**。
+- `eval_gate.validate_task` 强制:`numeric_anchor` **仅**允许出现在带 `dataset_fixture` 的任务上;
+  无 fixture 的数值锚 = gate FAIL。值级守卫 `_NUMERIC_PIN_RE` **不**扫描 `numeric_anchor`
+  (锚的 `value` 本就该是数)。
+
+红线依然覆盖所有 fixture-less 任务;该例外只闭合「跑通 + 调对工具 + 产出报告,但算错了一个数」
+这个此前 eval 无法检测的盲区(TR-2 / G3–G5 correctness)。
