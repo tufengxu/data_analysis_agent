@@ -7,8 +7,9 @@ Keyed by (kind, key) upsert so re-stating a metric updates it in place.
 
 from __future__ import annotations
 
+import contextlib
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from ..jsonl_store import JsonlStore
@@ -37,10 +38,12 @@ class MemoryStore:
         # True if a metric's content carries a numeric value (ADR 0004 leak).
         self._leak_check = leak_check
         self._store = JsonlStore(self.dir / "memory.jsonl")
+        self._lock_path = self.dir / "memory.jsonl.lock"
         self._index: dict[tuple[str, str], MemoryEntry] = {}
         self._load()
 
     def _load(self) -> None:
+        self._index.clear()
         for row in self._store.read():
             try:
                 entry = MemoryEntry.from_dict(row)
@@ -48,19 +51,60 @@ class MemoryStore:
                 continue
             self._index[(entry.kind, entry.key)] = entry  # last write wins
 
+    @contextlib.contextmanager
+    def _locked(self) -> Iterator[None]:
+        """Cross-process advisory lock (POSIX flock) around load→mutate→rewrite.
+
+        Without it, two concurrent DAA sessions each hold a stale in-memory index
+        and the last rewrite wins, silently losing the other's entries. On a
+        read-only filesystem (lock file cannot be created) this degrades to an
+        unlocked mutate — matching JsonlStore's graceful-degradation contract
+        (no concurrent writes are possible on a read-only fs anyway).
+        """
+        import fcntl
+
+        fh = None
+        locked = False
+        try:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            fh = self._lock_path.open("w", encoding="utf-8")
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            locked = True
+        except OSError:
+            # Read-only fs / permission denied: degrade to unlocked mutate.
+            if fh is not None:
+                with contextlib.suppress(OSError):
+                    fh.close()
+                fh = None
+        try:
+            yield
+        finally:
+            if locked and fh is not None:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                fh.close()
+
+    def _mutate(self, func: Callable[[dict[tuple[str, str], MemoryEntry]], None]) -> None:
+        """Atomically reload-from-disk → apply mutation → rewrite under the lock."""
+        with self._locked():
+            self._load()
+            func(self._index)
+            self._evict()
+            self._rewrite()
+
     def put(self, entry: MemoryEntry) -> None:
-        existing = self._index.get((entry.kind, entry.key))
-        if existing is not None:
-            # Preserve accumulated trust/recency on re-statement.
-            entry.created_at = existing.created_at
-            entry.use_count = max(entry.use_count, existing.use_count)
-        # ADR 0004 leak guard: a metric carrying a numeric VALUE is never
-        # auto-confirmed (see note_accepted_use). We do NOT downgrade an entry
-        # the caller explicitly marked confirmed=True (e.g. /define) — that is a
-        # human-stated definition, not a mined value.
-        self._index[(entry.kind, entry.key)] = entry
-        self._evict()
-        self._rewrite()
+        def apply(index: dict[tuple[str, str], MemoryEntry]) -> None:
+            existing = index.get((entry.kind, entry.key))
+            if existing is not None:
+                # Preserve accumulated trust/recency on re-statement.
+                entry.created_at = existing.created_at
+                entry.use_count = max(entry.use_count, existing.use_count)
+            # ADR 0004 leak guard lives in note_accepted_use (auto-confirm path);
+            # we do NOT downgrade an entry the caller marked confirmed=True
+            # (e.g. /define) — that is a human-stated definition, not a mined value.
+            index[(entry.kind, entry.key)] = entry
+
+        self._mutate(apply)
 
     def get(self, kind: str, key: str) -> MemoryEntry | None:
         return self._index.get((kind, key))
@@ -102,11 +146,14 @@ class MemoryStore:
         confirmation (that was the old false-trust bug). The rephrase-gated
         light-confirm runs through ``note_accepted_use`` instead.
         """
-        entry = self._index.get((kind, key))
-        if entry is None:
-            return
-        entry.last_used_at = _utc_now()
-        self._rewrite()
+
+        def apply(index: dict[tuple[str, str], MemoryEntry]) -> None:
+            entry = index.get((kind, key))
+            if entry is None:
+                return
+            entry.last_used_at = _utc_now()
+
+        self._mutate(apply)
 
     def note_accepted_use(self, kind: str, key: str) -> None:
         """Record a use the user did NOT push back on; a metric auto-confirms
@@ -116,27 +163,37 @@ class MemoryStore:
         auto-confirmed — it must wait for an explicit human confirm() so a stale
         number can't silently pin itself as established.
         """
-        entry = self._index.get((kind, key))
-        if entry is None:
-            return
-        entry.use_count += 1
-        entry.last_used_at = _utc_now()
-        leaky = self._leak_check(entry.content or "") if self._leak_check is not None else False
-        if (
-            entry.kind == "metric_definition"
-            and entry.use_count >= CONFIRM_AFTER_USES
-            and not leaky
-        ):
-            entry.confirmed = True
-        self._rewrite()
+        leak_check = self._leak_check
+
+        def apply(index: dict[tuple[str, str], MemoryEntry]) -> None:
+            entry = index.get((kind, key))
+            if entry is None:
+                return
+            entry.use_count += 1
+            entry.last_used_at = _utc_now()
+            leaky = leak_check(entry.content or "") if leak_check is not None else False
+            if (
+                entry.kind == "metric_definition"
+                and entry.use_count >= CONFIRM_AFTER_USES
+                and not leaky
+            ):
+                entry.confirmed = True
+
+        self._mutate(apply)
 
     def confirm(self, kind: str, key: str) -> bool:
-        entry = self._index.get((kind, key))
-        if entry is None:
-            return False
-        entry.confirmed = True
-        self._rewrite()
-        return True
+        found = False
+
+        def apply(index: dict[tuple[str, str], MemoryEntry]) -> None:
+            nonlocal found
+            entry = index.get((kind, key))
+            if entry is None:
+                return
+            entry.confirmed = True
+            found = True
+
+        self._mutate(apply)
+        return found
 
     def _evict(self) -> None:
         if len(self._index) <= self.max_entries:

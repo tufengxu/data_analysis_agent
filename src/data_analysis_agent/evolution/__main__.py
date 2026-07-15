@@ -165,9 +165,13 @@ def cmd_synthesize(args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     config = AgentConfig.from_env()
     candidates = load_skills(config.skills_dir(), statuses=("candidate",))
+    proposed = load_skills(config.skills_dir(), statuses=("proposed_promote",))
     active = load_skills(config.skills_dir(), statuses=("active",))
     print(f"active 技能: {[s.name for s in active]}")
-    print(f"candidate 技能(待评估/人审): {[s.name for s in candidates]}")
+    print(
+        f"proposed_promote 技能(已过 eval,待人审 `evolution approve`): {[s.name for s in proposed]}"
+    )
+    print(f"candidate 技能(待评估): {[s.name for s in candidates]}")
     return 0
 
 

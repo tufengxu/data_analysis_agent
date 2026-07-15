@@ -270,3 +270,30 @@ def test_eval_config_tool_set_executable_under_plan_env():
     runtime = AgentRuntime.from_config(eval_config_for(prod), client=_FakeClient())
     tools = set(runtime.loop.registry.list_tools())
     assert "python_analysis" in tools and "html_report" in tools  # not denied away
+
+
+def test_approve_and_retire_lifecycle(tmp_path):
+    """approve_skill/retire_skill: idempotent, not-found=1, and the only
+    active-writing / demotion paths."""
+    from data_analysis_agent.evolution.evaluator import approve_skill, retire_skill
+
+    skills_dir = tmp_path / "skills"
+    save_skill(
+        skills_dir,
+        {"name": "s1", "keywords": ["k"], "instructions": "do x", "status": "candidate"},
+    )
+
+    # not-found
+    assert approve_skill(skills_dir, "missing") == 1
+    assert retire_skill(skills_dir, "missing") == 1
+
+    # candidate -> proposed_promote (via apply) -> active (via approve, idempotent)
+    assert approve_skill(skills_dir, "s1") == 0
+    assert approve_skill(skills_dir, "s1") == 0  # already active -> idempotent 0
+    assert load_skills(skills_dir, statuses=("active",))[0].name == "s1"
+
+    # active -> retired (via retire, idempotent)
+    assert retire_skill(skills_dir, "s1") == 0
+    assert retire_skill(skills_dir, "s1") == 0  # already retired -> idempotent 0
+    assert load_skills(skills_dir, statuses=("retired",))[0].name == "s1"
+    assert load_skills(skills_dir, statuses=("active",)) == []
