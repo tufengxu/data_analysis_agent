@@ -154,3 +154,21 @@ def test_check_import_rules_survives_syntax_error(tmp_path):
     joined = "\n".join(errors)
     assert "good.py" in joined  # sibling still checked despite the broken file
     assert "broken.py" in joined  # syntax error surfaced, not crashed
+
+
+async def test_oversized_image_not_read_into_parent(tmp_path, monkeypatch):
+    """An image larger than _MAX_IMAGE_BYTES is skipped (note in content) rather
+    than read verbatim into parent memory (OOM avoidance)."""
+    from data_analysis_agent.tools import python_exec
+    from data_analysis_agent.tools.python_exec import PythonAnalysisTool
+
+    monkeypatch.setattr(python_exec, "_MAX_IMAGE_BYTES", 100)
+    big = tmp_path / "big.png"
+    big.write_bytes(b"x" * 1000)  # 1000 bytes > 100 cap
+
+    tool = PythonAnalysisTool(allowed_paths=[tmp_path])
+    result = tool._compose_result(
+        "", "", [{"type": "image", "path": str(big), "format": "png"}], False
+    )
+    assert "image skipped" in result.content
+    assert "images" not in (result.metadata or {})

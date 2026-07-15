@@ -44,6 +44,9 @@ DEFAULT_ECHARTS_SRC = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.j
 MAX_SECTIONS = 30
 MAX_TABLE_ROWS = 200
 MAX_OPTION_CHARS = 2_000_000
+# Cap for inlining a local echarts build (the minified v5 build is ~1MB); blocks
+# inlining an arbitrary large file via echarts_src.
+MAX_ECHARTS_INLINE_CHARS = 8_000_000
 DEFAULT_CHART_HEIGHT = 360
 MIN_CHART_HEIGHT = 120
 MAX_CHART_HEIGHT = 1200
@@ -287,10 +290,12 @@ class HtmlReportTool(Tool):
     def description(self) -> str:
         return (
             "Generate a self-contained H5 HTML analysis report with ECharts charts. "
-            "Call this AFTER the analysis is done: first compute every number/series "
-            "with python_analysis, then pass the results in as structured sections. "
-            "Each section may carry one ECharts `option` object (rendered verbatim) "
-            "and/or one small table. The report file path is returned for the user."
+            "PREFERRED: pass a `document` (ReportDocument) built from report_contract — "
+            "it is run through the deterministic QA gate and a DRAFT (blocker) document "
+            "is REFUSED (no file written) so fix the blockers first. LEGACY: the old "
+            "title/summary/sections form still renders but WITHOUT the QA gate. In both "
+            "cases compute every number/series with python_analysis first; the report "
+            "file path is returned for the user."
         )
 
     @property
@@ -298,15 +303,38 @@ class HtmlReportTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Report title"},
-                "subtitle": {"type": "string", "description": "Optional subtitle"},
+                # v2 (preferred): a ReportDocument drives QA + traceability.
+                "document": {
+                    "type": "object",
+                    "description": (
+                        "PREFERRED. A ReportDocument: title, data_scope, contract, and a "
+                        "list of blocks (executive_summary / kpi_strip / finding / chart / "
+                        "table / recommendation / caveat / source_metadata). Rendered through "
+                        "the QA gate; a DRAFT (blocker) document is refused."
+                    ),
+                },
+                "charts": {
+                    "type": "object",
+                    "description": (
+                        "Optional {block_id: ECharts-option} map for CHART blocks. "
+                        "Prefer chart_render to produce these."
+                    ),
+                    "additionalProperties": {"type": "object"},
+                },
+                "file_name": {
+                    "type": "string",
+                    "description": "Optional file name (no directories); default auto-generated",
+                },
+                # v1 (legacy): title/summary/sections — renders WITHOUT the QA gate.
+                "title": {"type": "string", "description": "Legacy: report title"},
+                "subtitle": {"type": "string", "description": "Legacy: optional subtitle"},
                 "summary": {
                     "type": "string",
-                    "description": "Executive summary (plain text, blank line = new paragraph)",
+                    "description": "Legacy: executive summary (plain text)",
                 },
                 "sections": {
                     "type": "array",
-                    "description": f"Report sections, at most {MAX_SECTIONS}",
+                    "description": f"Legacy: report sections, at most {MAX_SECTIONS}",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -346,12 +374,11 @@ class HtmlReportTool(Tool):
                         "required": ["heading"],
                     },
                 },
-                "file_name": {
-                    "type": "string",
-                    "description": "Optional file name (no directories); default auto-generated",
-                },
             },
-            "required": ["title", "sections"],
+            # Neither path is schema-required: validate_input enforces per-path
+            # (v2 needs document; v1 needs title+sections). Forcing title+sections
+            # here would reject v2-only calls at the API layer.
+            "required": [],
         }
 
     def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
@@ -587,15 +614,29 @@ class HtmlReportTool(Tool):
         )
 
     def _echarts_tag(self) -> str:
-        """CDN URL → script src tag; local file path → inline embed (offline)."""
+        """CDN URL → script src tag; local file path → inline embed (offline).
+
+        Security: a local path is only inlined if it looks like an echarts build
+        (contains the ``echarts`` sentinel and is under a size cap). Arbitrary
+        files are refused and fall back to the CDN — otherwise a local echarts_src
+        pointed at a non-echarts file would inline arbitrary JS into every
+        delivered report (an exfiltration vector when the HTML is shared).
+        """
         src = self.echarts_src
         if src.startswith(("http://", "https://")):
             return f'<script src="{html.escape(src, quote=True)}"></script>'
         local = Path(src).expanduser()
+        # Stat before reading: a misconfigured echarts_src pointing at a huge
+        # file must not be slurped into memory before the cap rejects it.
         try:
+            if local.stat().st_size > MAX_ECHARTS_INLINE_CHARS:
+                return f'<script src="{html.escape(DEFAULT_ECHARTS_SRC, quote=True)}"></script>'
             payload = local.read_text(encoding="utf-8")
         except OSError:
             # Fall back to the default CDN rather than shipping a chartless page.
+            return f'<script src="{html.escape(DEFAULT_ECHARTS_SRC, quote=True)}"></script>'
+        if "echarts" not in payload.lower():
+            # Refuse to inline non-echarts content; use the CDN.
             return f'<script src="{html.escape(DEFAULT_ECHARTS_SRC, quote=True)}"></script>'
         return "<script>" + payload.replace("</", "<\\/") + "</script>"
 
@@ -675,6 +716,27 @@ class HtmlReportTool(Tool):
     async def _call_v2(self, input_data: dict[str, Any]) -> ToolResult:
         document_dict = input_data["document"]
         charts = input_data.get("charts") or {}
+        # QA gate: refuse a DRAFT (blocker) document BEFORE rendering or writing.
+        # The model gets an actionable error (which blockers, how to fix) so it
+        # can self-correct; NEEDS_REVIEW / READY render with the readiness badge.
+        try:
+            gate_doc = ReportDocument.from_dict(document_dict)
+        except (TypeError, ValueError, KeyError) as exc:
+            return ToolResult(content=f"Failed to parse ReportDocument: {exc}", is_error=True)
+        qa = run_qa(gate_doc, artifact_exists=True)
+        if qa.readiness is Readiness.DRAFT:
+            blockers = [f for f in qa.findings if f.severity is Severity.BLOCKER]
+            blurb = "\n".join(
+                f"- {f.code}: {f.message}" + (f"  → {f.suggested_fix}" if f.suggested_fix else "")
+                for f in blockers
+            )
+            return ToolResult(
+                content=(
+                    f"报告被 QA 闸拒绝:readiness=DRAFT({len(blockers)} 个 blocker)。"
+                    "修复后重新调用 html_report(document=...):\n" + blurb
+                ),
+                is_error=True,
+            )
         try:
             page = self._render_v2_page(document_dict, charts)
         except Exception as exc:  # 广义兜底:from_dict/渲染任何未预见错误(评审 Nit)

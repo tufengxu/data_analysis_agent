@@ -26,6 +26,7 @@ _PROD_TOOLS = {
     "causal_qa",
     "experiment_readout",
     "causal_action_plan",
+    "causal_report",
     "chart_render",
 }
 

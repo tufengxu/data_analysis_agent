@@ -226,14 +226,23 @@ class SkillEvaluator:
         return EvalResult(task.task_id, passed, failures, run.tool_call_count)
 
     def apply(self, verdict: dict[str, Any]) -> Path | None:
-        """Promote/retire the skill file per the verdict; needs_review left as-is."""
+        """Record the eval verdict on the skill file WITHOUT auto-promoting.
+
+        Phase 1 governance (roadmap non-goal: no auto-promotion without human
+        review): a ``promote`` verdict moves the skill to ``proposed_promote``
+        (NOT ``active``) — it will not load into the live registry until a human
+        runs ``evolution approve <name>``. ``retire`` (demotion) is safe to apply
+        directly. ``needs_review`` leaves the file unchanged.
+        """
         decision = verdict["decision"]
         if decision == "needs_review":
             return None
-        for skill in load_skills(self.skills_dir, statuses=("candidate", "active")):
+        for skill in load_skills(
+            self.skills_dir, statuses=("candidate", "proposed_promote", "active")
+        ):
             if skill.name != verdict["skill"]:
                 continue
-            skill.status = "active" if decision == "promote" else "retired"
+            skill.status = "proposed_promote" if decision == "promote" else "retired"
             skill.eval_score = verdict.get("metrics", {}).get("pass_rate")
             return save_skill(self.skills_dir, skill.to_dict())
         return None
@@ -340,9 +349,25 @@ def make_agent_run_fn(client: Any, *, allowed_paths: list[str | Path], config: A
 
 
 def register_evaluate_cli(subparsers: Any) -> None:
-    """Register the ``evaluate`` subcommand on the evolution CLI."""
-    parser = subparsers.add_parser("evaluate", help="fixture 重跑评估候选技能并晋升/退役")
-    parser.set_defaults(func=_cmd_evaluate)
+    """Register the ``evaluate`` / ``approve`` / ``retire`` subcommands.
+
+    ``evaluate`` only PROPOSES promotion (status=proposed_promote); ``approve``
+    is the human-in-the-loop gate that writes active; ``retire`` demotes.
+    """
+    p_eval = subparsers.add_parser(
+        "evaluate", help="fixture 重跑评估候选技能(promote → proposed_promote,不自动激活)"
+    )
+    p_eval.set_defaults(func=_cmd_evaluate)
+
+    p_approve = subparsers.add_parser(
+        "approve", help="人工批准 proposed_promote/candidate → active(唯一激活入口)"
+    )
+    p_approve.add_argument("name", help="技能名")
+    p_approve.set_defaults(func=_cmd_approve)
+
+    p_retire = subparsers.add_parser("retire", help="退役技能 → retired(移出活注册表)")
+    p_retire.add_argument("name", help="技能名")
+    p_retire.set_defaults(func=_cmd_retire)
 
 
 def _cmd_evaluate(args: Any) -> int:
@@ -366,11 +391,62 @@ def _cmd_evaluate(args: Any) -> int:
         verdict = evaluator.evaluate(skill)
         print(f"[{verdict['skill']}] → {verdict['decision']}  {verdict['metrics']}")
         applied = evaluator.apply(verdict)
-        if applied is not None:
-            print(f"  已更新: {applied}")
+        if applied is not None and verdict["decision"] == "promote":
+            print(
+                f"  已标记 proposed_promote(未自动激活):{applied}\n"
+                f"  人工确认后运行 `evolution approve {verdict['skill']}` 才会进入活注册表。"
+            )
+        elif applied is not None:
+            print(f"  已退役(retired):{applied}")
         elif verdict["decision"] == "needs_review":
             print("  样本不足,降级为人审清单(保持 candidate)。")
     return 0
+
+
+def approve_skill(skills_dir: str | Path, name: str) -> int:
+    """Human-in-the-loop gate: the ONLY path that writes status=active.
+
+    Returns 0 on success (already-active is a no-op success), 1 if not found.
+    """
+    for skill in load_skills(skills_dir, statuses=("candidate", "proposed_promote", "active")):
+        if skill.name == name:
+            if skill.status == "active":
+                return 0
+            skill.status = "active"
+            save_skill(skills_dir, skill.to_dict())
+            return 0
+    return 1
+
+
+def retire_skill(skills_dir: str | Path, name: str) -> int:
+    """Manually retire a skill (demote to retired; removed from the live registry).
+
+    Returns 0 on success (already-retired is a no-op success), 1 if not found.
+    """
+    for skill in load_skills(
+        skills_dir, statuses=("candidate", "proposed_promote", "active", "retired")
+    ):
+        if skill.name == name:
+            if skill.status == "retired":
+                return 0
+            skill.status = "retired"
+            save_skill(skills_dir, skill.to_dict())
+            return 0
+    return 1
+
+
+def _cmd_approve(args: Any) -> int:
+    """Human-in-the-loop gate: the ONLY path that writes status=active."""
+    from ..config import AgentConfig
+
+    return approve_skill(AgentConfig.from_env().skills_dir(), args.name)
+
+
+def _cmd_retire(args: Any) -> int:
+    """Manually retire a skill (demote to retired; removed from the live registry)."""
+    from ..config import AgentConfig
+
+    return retire_skill(AgentConfig.from_env().skills_dir(), args.name)
 
 
 __all__ = [

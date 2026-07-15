@@ -224,3 +224,33 @@ def test_client_usage_int_guard():
 
     src = inspect.getsource(client_mod.AnthropicApiClient.stream_model)
     assert src.count("isinstance(value, int)") == 2
+
+
+def test_trajectory_dir_disk_cap_evicts_oldest(tmp_path):
+    """A new session evicts the oldest OTHER session files when the trajectories
+    dir exceeds the cap; the current session's own file is never touched."""
+    import os
+    import time
+
+    d = tmp_path / "traj"
+    d.mkdir()
+    # Three old sessions, each ~1MB; oldest by mtime first.
+    for i, name in enumerate(("old1", "old2", "old3")):
+        p = d / f"{name}.jsonl"
+        p.write_text("x" * (1024 * 1024), encoding="utf-8")
+        mtime = time.time() - (3 - i)  # old1 < old2 < old3
+        os.utime(p, (mtime, mtime))
+
+    # Pre-create the current session's file (resume scenario) so we can assert
+    # it is never evicted, then make it the newest by mtime.
+    cur = d / "new_sess.jsonl"
+    cur.write_text("y" * (512 * 1024), encoding="utf-8")
+    os.utime(cur, (time.time(), time.time()))
+
+    # Cap = 2.5MB; old files total ~3MB -> oldest (old1) evicted; current kept.
+    # Construction alone runs _enforce_disk_cap (no turn flushed here).
+    TrajectoryLogger(d, "new_sess", monotonic=_FakeClock(), max_dir_bytes=int(2.5 * 1024 * 1024))
+    remaining = sorted(p.name for p in d.glob("*.jsonl"))
+    assert "old1.jsonl" not in remaining  # oldest evicted
+    assert "old2.jsonl" in remaining and "old3.jsonl" in remaining
+    assert "new_sess.jsonl" in remaining  # current session never evicted

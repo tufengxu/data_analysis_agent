@@ -23,6 +23,7 @@ from typing import Any
 
 from data_analysis_agent.reporting.chart_rules import (
     check_data_sufficiency,
+    select_family,
     suggest_fallback,
 )
 from data_analysis_agent.reporting.contract import ChartFamily
@@ -218,6 +219,11 @@ class ChartRenderTool(Tool):
         family = input_data["family"]
         data = input_data["data"]
         cf = ChartFamily(family)
+        # Exercise the deterministic family selector (reporting.chart_rules) on
+        # the data shape so it is live in production, not dead code, and surface
+        # its recommendation to the model (advisory — it never overrides the
+        # requested family, and only covers the basic shapes).
+        recommended = self._recommend_family(cf, data)
 
         option = self._build_option(cf, data, input_data)
 
@@ -273,17 +279,61 @@ class ChartRenderTool(Tool):
             "data_sufficient": sufficient,
             "reason": reason,
             "fallback_family": fallback,
+            "recommended_family": recommended,
             "n_points": n_points,
             "n_observations": n_observations,
         }
         return ToolResult(
-            content=_summarize(family, sufficient, fallback, out_path),
+            content=_summarize(family, sufficient, fallback, out_path, recommended),
             metadata={
                 "chart_option": option,
                 "artifact_paths": [str(out_path)],
                 "chart_meta": meta,
             },
         )
+
+    @staticmethod
+    def _recommend_family(cf: ChartFamily, data: dict[str, Any]) -> str | None:
+        """Call ``select_family`` on the data shape (advisory recommendation).
+
+        Returns the recommended family name, or None for shapes select_family
+        does not cover (scatter / heatmap / waterfall) or on any shape mismatch.
+        Best-effort: never raises — a recommendation failure yields None.
+        """
+        try:
+            if cf is ChartFamily.FUNNEL:
+                rec = select_family(
+                    n_points=len(data.get("stages") or []),
+                    n_categories=None,
+                    is_time_series=False,
+                    comparison_basis=None,
+                    ordered_stages=True,
+                )
+            elif cf in (
+                ChartFamily.LINE,
+                ChartFamily.BAR,
+                ChartFamily.GROUPED_BAR,
+                ChartFamily.STACKED_BAR,
+                ChartFamily.DOT,
+            ):
+                labels = data.get("labels") or []
+                series = data.get("series") or []
+                first_values = (series[0] or {}).get("values") if series else []
+                rec = select_family(
+                    n_points=len(labels),
+                    n_categories=len(labels),
+                    is_time_series=bool(data.get("is_time_series")),
+                    comparison_basis="group" if len(series) > 1 else None,
+                    single_value=(
+                        len(labels) == 1 and len(series) == 1 and len(first_values or []) == 1
+                    ),
+                    ordered_stages=False,
+                )
+            else:
+                return None
+        except Exception:
+            return None
+        return rec.value
 
     @staticmethod
     def _build_option(
@@ -377,9 +427,18 @@ class ChartRenderTool(Tool):
         return option
 
 
-def _summarize(family: str, sufficient: bool, fallback: str | None, out_path: Path) -> str:
+def _summarize(
+    family: str,
+    sufficient: bool,
+    fallback: str | None,
+    out_path: Path,
+    recommended: str | None = None,
+) -> str:
     head = f"chart_render({family}) → {out_path.name}"
+    rec = ""
+    if recommended and recommended != family:
+        rec = f";select_family 建议:{recommended}(供参考)"
     if sufficient:
-        return f"{head};数据充分。"
+        return f"{head};数据充分。{rec}".rstrip()
     fb = f";建议 fallback 图族:{fallback}" if fallback else ""
-    return f"{head};数据充分性不足{fb}。"
+    return f"{head};数据充分性不足{fb}。{rec}".rstrip()

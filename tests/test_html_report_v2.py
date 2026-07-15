@@ -171,6 +171,51 @@ def test_v2_qa_badge_draft_with_blocker(tmp_path: Path):
     assert 'class="qa-banner draft"' in page
 
 
+# ---- QA gate enforcement (C2: DRAFT refused, NEEDS_REVIEW/READY rendered) ----
+
+
+async def test_v2_draft_document_refused_no_artifact(tmp_path: Path):
+    """C2: a DRAFT (blocker) document is REFUSED — is_error, no file written,
+    and the blocker codes are surfaced so the model can self-correct."""
+    tool = _tool(tmp_path)
+    result = await tool.call({"document": _doc_dict(data_scope=None)})
+    assert result.is_error is True
+    assert "QA 闸拒绝" in result.content
+    assert "data_scope" in result.content  # blocker code surfaced
+    assert list(tmp_path.glob("*.html")) == []  # no artifact written
+
+
+async def test_v2_needs_review_document_renders_and_writes(tmp_path: Path):
+    """NEEDS_REVIEW (high findings, no blocker) renders + writes with a banner."""
+    tool = _tool(tmp_path)
+    # default _doc_dict: recommendation has no evidence_refs -> HIGH finding,
+    # but no blocker -> NEEDS_REVIEW (renders).
+    result = await tool.call({"document": _doc_dict()})
+    assert result.is_error is False
+    files = list(tmp_path.glob("*.html"))
+    assert len(files) == 1
+    page = files[0].read_text(encoding="utf-8")
+    assert "qa-badge" in page
+    assert "needs-review" in page
+
+
+async def test_v2_ready_document_renders_and_writes(tmp_path: Path):
+    """READY (no high/blocker) renders + writes with the ready badge."""
+    tool = _tool(tmp_path)
+    clean = (
+        ReportBlock(block_id="s", role=BlockRole.EXECUTIVE_SUMMARY, body="结论"),
+        ReportBlock(
+            block_id="r", role=BlockRole.RECOMMENDATION, body="建议 A", evidence_refs=("e1",)
+        ),
+        ReportBlock(block_id="src", role=BlockRole.SOURCE_METADATA, body="sales.csv"),
+    )
+    result = await tool.call({"document": _doc_dict(blocks=clean)})
+    assert result.is_error is False
+    files = list(tmp_path.glob("*.html"))
+    assert len(files) == 1
+    assert "qa-ready" in files[0].read_text(encoding="utf-8")
+
+
 def test_v2_traceability_data_attrs(tmp_path: Path):
     tool = _tool(tmp_path)
     page = tool._render_v2_page(_doc_dict(), {})

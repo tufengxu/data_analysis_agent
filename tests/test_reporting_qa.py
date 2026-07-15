@@ -527,3 +527,25 @@ def test_report_document_and_contract_hashable():
     )
     assert hash(doc) is not None
     assert hash(doc.contract) is not None
+
+
+def test_empty_evidence_ref_flagged():
+    """An empty-string evidence_ref would bypass `not b.evidence_refs` (non-empty
+    tuple) while providing no source — flag it as HIGH evidence.empty_ref."""
+    doc = _ready_doc(
+        blocks=(
+            ReportBlock(block_id="h", role=BlockRole.HEADER, heading="日报"),
+            ReportBlock(block_id="s", role=BlockRole.EXECUTIVE_SUMMARY, body="结论"),
+            ReportBlock(
+                block_id="f",
+                role=BlockRole.FINDING,
+                body="GMV 上升 12%",
+                heading="增长",
+                evidence_refs=("",),  # empty-string ref — fake evidence
+            ),
+            ReportBlock(block_id="src", role=BlockRole.SOURCE_METADATA, body="来源"),
+        ),
+    )
+    report = run_qa(doc, artifact_exists=True)
+    assert "evidence.empty_ref" in _codes(report)
+    assert report.readiness is Readiness.NEEDS_REVIEW  # HIGH, not DRAFT

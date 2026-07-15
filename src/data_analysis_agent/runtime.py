@@ -28,6 +28,7 @@ from .security.permissions import (
     PermissionMode,
     PermissionRule,
 )
+from .security.sanitizer import has_numeric_leak
 from .session import AgentSession
 from .skills.base import Skill
 from .skills.builtin import (
@@ -45,6 +46,7 @@ from .tools import (
     CausalActionPlanTool,
     CausalContractTool,
     CausalQATool,
+    CausalReportTool,
     ChartRenderTool,
     DataProfileTool,
     ExperimentReadoutTool,
@@ -73,6 +75,7 @@ READ_ONLY_TOOLS = (
     "causal_qa",
     "experiment_readout",
     "causal_action_plan",
+    "causal_report",
 )
 
 
@@ -93,7 +96,7 @@ def build_registry(
     sampling_config = config.sampling_config() if config else None
     echarts_src = config.echarts_src if config else None
     paths = list(analysis_paths) if analysis_paths else None
-    registry.register(FileReadTool())
+    registry.register(FileReadTool(allowed_paths=paths))
     registry.register(DataProfileTool(allowed_paths=paths))
     registry.register(
         PythonAnalysisTool(
@@ -114,6 +117,7 @@ def build_registry(
     registry.register(CausalQATool())
     registry.register(ExperimentReadoutTool())
     registry.register(CausalActionPlanTool())
+    registry.register(CausalReportTool())
     registry.register(ChartRenderTool(artifact_dir=artifact_dir))
 
     if config:
@@ -198,7 +202,7 @@ def _build_memory_injector(config: AgentConfig) -> MemoryInjector | None:
         return None
     return MemoryInjector(
         ProfileStore(config.memory_dir()),
-        MemoryStore(config.memory_dir()),
+        MemoryStore(config.memory_dir(), leak_check=has_numeric_leak),
         budget_tokens=config.memory_inject_budget_tokens,
     )
 

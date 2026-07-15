@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import csv
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
 
@@ -128,10 +129,12 @@ class ProfileStore:
     def __init__(self, store_dir: str | Path) -> None:
         self.dir = Path(store_dir)
         self._store = JsonlStore(self.dir / "profiles.jsonl")
+        self._lock_path = self.dir / "profiles.jsonl.lock"
         self._index: dict[str, DatasetProfile] = {}
         self._load()
 
     def _load(self) -> None:
+        self._index.clear()
         for row in self._store.read():
             try:
                 profile = DatasetProfile.from_dict(row)
@@ -139,40 +142,73 @@ class ProfileStore:
                 continue
             self._index[_resolve(profile.path)] = profile
 
+    @contextlib.contextmanager
+    def _locked(self) -> Iterator[None]:
+        """Cross-process advisory lock around reload→record→rewrite (see
+        MemoryStore._locked). Degrades to unlocked on a read-only filesystem."""
+        import fcntl
+
+        fh = None
+        locked = False
+        try:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            fh = self._lock_path.open("w", encoding="utf-8")
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            locked = True
+        except OSError:
+            if fh is not None:
+                with contextlib.suppress(OSError):
+                    fh.close()
+            fh = None
+        try:
+            yield
+        finally:
+            if locked and fh is not None:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                fh.close()
+
     def get(self, path: str | Path) -> DatasetProfile | None:
         return self._index.get(_resolve(path))
 
     def record(self, path: str | Path) -> DatasetProfile | None:
-        """Generate/refresh a profile per the layered-staleness rule, persist it."""
-        key = _resolve(path)
-        existing = self._index.get(key)
-        if existing is not None:
-            status = assess(existing, path)
-            if status == "fresh":
-                existing.last_used_at = _utc_now()
-                existing.stale = (
-                    False  # a previously-staled profile that re-verifies is fresh again
-                )
-                self._index[key] = existing
-                self._rewrite()
-                return existing
-            if status == "stale":
-                fresh = build_profile(path)
-                if fresh is not None:  # keep structure identity, refresh stats
-                    fresh.created_at = existing.created_at
-                    self._index[key] = fresh
+        """Generate/refresh a profile per the layered-staleness rule, persist it.
+
+        The whole assess/build/rewrite runs under the cross-process lock after a
+        reload, so two sessions recording different paths can't lose each other's
+        profile (last-rewrite-wins).
+        """
+        with self._locked():
+            self._load()
+            key = _resolve(path)
+            existing = self._index.get(key)
+            if existing is not None:
+                status = assess(existing, path)
+                if status == "fresh":
+                    existing.last_used_at = _utc_now()
+                    existing.stale = (
+                        False  # a previously-staled profile that re-verifies is fresh again
+                    )
+                    self._index[key] = existing
                     self._rewrite()
-                    return fresh
-                existing.stale = True
-                self._rewrite()
-                return existing
-            # invalid / missing → rebuild from scratch (fall through)
-        built = build_profile(path)
-        if built is None:
-            return None
-        self._index[key] = built
-        self._rewrite()
-        return built
+                    return existing
+                if status == "stale":
+                    fresh = build_profile(path)
+                    if fresh is not None:  # keep structure identity, refresh stats
+                        fresh.created_at = existing.created_at
+                        self._index[key] = fresh
+                        self._rewrite()
+                        return fresh
+                    existing.stale = True
+                    self._rewrite()
+                    return existing
+                # invalid / missing → rebuild from scratch (fall through)
+            built = build_profile(path)
+            if built is None:
+                return None
+            self._index[key] = built
+            self._rewrite()
+            return built
 
     def all(self) -> list[DatasetProfile]:
         return list(self._index.values())

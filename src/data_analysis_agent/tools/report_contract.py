@@ -17,6 +17,7 @@ from data_analysis_agent.reporting.model import (
     UserNeed,
 )
 from data_analysis_agent.reporting.requirement_parser import parse_user_need
+from data_analysis_agent.reporting.templates import select_template
 from data_analysis_agent.reporting.traceability import link_to_contract_fields
 
 from .base import CanUseToolFn, Tool, ToolResult, ValidationResult
@@ -159,7 +160,15 @@ class ReportContractTool(Tool):
             field_sources=field_sources,
             missing_context=tuple(missing),
         )
-        return ToolResult(content=_render(contract), metadata={"contract": contract.to_dict()})
+        # Wire the deterministic template selector (reporting.templates) so it is
+        # live in production, and surface the curated section-role spine +
+        # required caveat topics for the model to build a conforming ReportDocument.
+        # AD_HOC / unknown report_type -> no template (None).
+        template = select_template(contract.report_type)
+        meta: dict[str, Any] = {"contract": contract.to_dict()}
+        if template is not None:
+            meta["template"] = template.to_dict()
+        return ToolResult(content=_render(contract, template), metadata=meta)
 
 
 def _resolve_report_type(override: Any, user_need: UserNeed) -> ReportType:
@@ -200,7 +209,7 @@ def _dedup(seq: list[str]) -> list[str]:
     return out
 
 
-def _render(contract: ReportContract) -> str:
+def _render(contract: ReportContract, template: Any = None) -> str:
     lines = [
         f"question: {contract.question}",
         f"report_type: {contract.report_type.value}",
@@ -219,4 +228,9 @@ def _render(contract: ReportContract) -> str:
     )
     if contract.missing_context:
         lines.append(f"missing_context: {', '.join(contract.missing_context)}")
+    if template is not None:
+        roles = ", ".join(r.value for r in template.section_roles)
+        caveats = ", ".join(template.required_caveats) if template.required_caveats else "(none)"
+        lines.append(f"template[{template.name}] section_roles: {roles}")
+        lines.append(f"template required_caveats: {caveats}")
     return "\n".join(lines)

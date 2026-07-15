@@ -63,7 +63,7 @@ async def test_file_read_tool_execute():
         f.write("line1\nline2\nline3\n")
         temp_path = f.name
 
-    tool = FileReadTool()
+    tool = FileReadTool(allowed_paths=[Path(temp_path).parent])
     result = await tool.call({"file_path": temp_path})
 
     assert "line1" in result.content
@@ -79,7 +79,7 @@ async def test_file_read_tool_offset_limit():
         f.write("line0\nline1\nline2\nline3\n")
         temp_path = f.name
 
-    tool = FileReadTool()
+    tool = FileReadTool(allowed_paths=[Path(temp_path).parent])
     result = await tool.call({"file_path": temp_path, "offset": 1, "limit": 2})
 
     assert "line1" in result.content
@@ -87,6 +87,62 @@ async def test_file_read_tool_offset_limit():
     assert "line0" not in result.content
 
     Path(temp_path).unlink()
+
+
+async def test_file_read_tool_limit_zero_returns_nothing():
+    """limit<=0 reads zero lines (matches old lines[start:start+0] semantics;
+    the streaming loop's append-then-break used to return one extra line)."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        f.write("line0\nline1\nline2\n")
+        temp_path = f.name
+
+    tool = FileReadTool(allowed_paths=[Path(temp_path).parent])
+    for bad_limit in (0, -3):
+        result = await tool.call({"file_path": temp_path, "limit": bad_limit})
+        assert result.is_error is False
+        assert "line0" not in result.content
+        assert "line1" not in result.content
+
+    Path(temp_path).unlink()
+
+
+async def test_file_read_tool_rejects_path_outside_allowed(tmp_path):
+    """read_file is path-scoped like data_profile: a path outside allowed_paths
+    is rejected before any read (closes the roadmap-admitted gap)."""
+    inside = tmp_path / "ok.txt"
+    inside.write_text("hello\n", encoding="utf-8")
+    outside = tmp_path.parent / "sibling_secret.txt"
+    outside.write_text("secret\n", encoding="utf-8")
+    try:
+        tool = FileReadTool(allowed_paths=[inside.parent])
+        ok = await tool.call({"file_path": str(inside)})
+        assert ok.is_error is False
+        assert "hello" in ok.content
+
+        denied = await tool.call({"file_path": str(outside)})
+        assert denied.is_error is True
+        assert "outside allowed analysis paths" in denied.content
+    finally:
+        outside.unlink(missing_ok=True)
+
+
+async def test_file_read_tool_resolves_symlink_before_whitelist(tmp_path):
+    """A symlink inside an allowed dir but pointing outside is rejected by its
+    resolved location (resolve() follows the link before the check)."""
+    target = tmp_path / "outside_target.txt"
+    target.write_text("private\n", encoding="utf-8")
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    link = allowed_dir / "link.txt"
+    link.symlink_to(target)
+    try:
+        tool = FileReadTool(allowed_paths=[allowed_dir])
+        result = await tool.call({"file_path": str(link)})
+        assert result.is_error is True
+        assert "outside allowed analysis paths" in result.content
+    finally:
+        link.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
 
 
 def test_python_analysis_tool_validation():

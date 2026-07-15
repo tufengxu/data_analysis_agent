@@ -140,9 +140,19 @@ def test_evaluator_promotes_and_rewrites_status(tmp_path):
     assert verdict["decision"] == "promote"
     evaluator.apply(verdict)
 
-    promoted = load_skills(skills_dir, statuses=("active",))
-    assert [s.name for s in promoted] == ["cohort_analysis"]
-    assert promoted[0].eval_score == 1.0
+    # Phase 1 governance: promote -> proposed_promote, NOT active (no auto-promotion;
+    # a human must run `evolution approve`). The live registry (active) stays empty.
+    proposed = load_skills(skills_dir, statuses=("proposed_promote",))
+    assert [s.name for s in proposed] == ["cohort_analysis"]
+    assert proposed[0].eval_score == 1.0
+    assert load_skills(skills_dir, statuses=("active",)) == []
+
+    # The human gate (approve) is the only path to active.
+    from data_analysis_agent.evolution.evaluator import approve_skill
+
+    assert approve_skill(skills_dir, "cohort_analysis") == 0
+    active = load_skills(skills_dir, statuses=("active",))
+    assert [s.name for s in active] == ["cohort_analysis"]
 
 
 def test_evaluator_needs_review_keeps_candidate(tmp_path):
@@ -260,3 +270,30 @@ def test_eval_config_tool_set_executable_under_plan_env():
     runtime = AgentRuntime.from_config(eval_config_for(prod), client=_FakeClient())
     tools = set(runtime.loop.registry.list_tools())
     assert "python_analysis" in tools and "html_report" in tools  # not denied away
+
+
+def test_approve_and_retire_lifecycle(tmp_path):
+    """approve_skill/retire_skill: idempotent, not-found=1, and the only
+    active-writing / demotion paths."""
+    from data_analysis_agent.evolution.evaluator import approve_skill, retire_skill
+
+    skills_dir = tmp_path / "skills"
+    save_skill(
+        skills_dir,
+        {"name": "s1", "keywords": ["k"], "instructions": "do x", "status": "candidate"},
+    )
+
+    # not-found
+    assert approve_skill(skills_dir, "missing") == 1
+    assert retire_skill(skills_dir, "missing") == 1
+
+    # candidate -> proposed_promote (via apply) -> active (via approve, idempotent)
+    assert approve_skill(skills_dir, "s1") == 0
+    assert approve_skill(skills_dir, "s1") == 0  # already active -> idempotent 0
+    assert load_skills(skills_dir, statuses=("active",))[0].name == "s1"
+
+    # active -> retired (via retire, idempotent)
+    assert retire_skill(skills_dir, "s1") == 0
+    assert retire_skill(skills_dir, "s1") == 0  # already retired -> idempotent 0
+    assert load_skills(skills_dir, statuses=("retired",))[0].name == "s1"
+    assert load_skills(skills_dir, statuses=("active",)) == []

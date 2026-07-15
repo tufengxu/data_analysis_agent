@@ -281,3 +281,20 @@ def test_memory_store_unreadable_file_degrades(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.open", boom)
     store = MemoryStore(d)  # must not raise
     assert store.all() == []
+
+
+def test_concurrent_stores_do_not_lose_entries(tmp_path):
+    """Two MemoryStore instances on the same dir (e.g. web workbench + CLI) must
+    not silently lose each other's entries: each mutation reloads under an flock
+    before rewriting, so the last writer merges the prior writer's state."""
+    d = tmp_path / "mem"
+    a = MemoryStore(d)
+    b = MemoryStore(d)  # separate instance, separate in-memory index
+    a.put(MemoryEntry(kind="preference", key="lang", content="zh"))
+    b.put(MemoryEntry(kind="preference", key="theme", content="dark"))
+
+    # A fresh reload sees BOTH — without the locked reload, b's stale index would
+    # have overwritten a's write and 'lang' would be gone.
+    c = MemoryStore(d)
+    keys = {e.key for e in c.all()}
+    assert keys == {"lang", "theme"}

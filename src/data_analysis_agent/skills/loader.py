@@ -16,18 +16,24 @@ readability we don't need enough to justify a new core dependency.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any, Literal
 
+from ..security.sanitizer import has_injection_marker
 from .base import Skill, SkillResult
+
+logger = logging.getLogger(__name__)
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]+")
 
 # Lifecycle: a candidate (synthesized, unproven) is loaded only when explicitly
-# requested; active is loaded into the live registry; retired is kept for audit.
-SkillStatus = Literal["candidate", "active", "retired"]
-SKILL_STATUSES: tuple[SkillStatus, ...] = ("candidate", "active", "retired")
+# requested; proposed_promote = passed eval but awaiting explicit human approval
+# (Phase 1: NO auto-promotion — roadmap non-goal); active is loaded into the live
+# registry; retired is kept for audit.
+SkillStatus = Literal["candidate", "proposed_promote", "active", "retired"]
+SKILL_STATUSES: tuple[SkillStatus, ...] = ("candidate", "proposed_promote", "active", "retired")
 
 
 class DeclarativeSkill(Skill):
@@ -129,8 +135,20 @@ def skill_to_dict(
     }
 
 
-def save_skill(skills_dir: str | Path, record: dict[str, Any]) -> Path:
-    """Persist one skill record to ``<dir>/<safe-name>.json``."""
+def save_skill(skills_dir: str | Path, record: dict[str, Any]) -> Path | None:
+    """Persist one skill record to ``<dir>/<safe-name>.json``.
+
+    Returns None (and refuses to write) if the instructions carry a structural
+    prompt-injection marker — a synthesized skill must never need role spoofing /
+    control tokens / override directives. Built-in records never trip this.
+    """
+    instructions = record.get("instructions", "")
+    if isinstance(instructions, str) and has_injection_marker(instructions):
+        logger.warning(
+            "rejecting skill %r: instructions contain a prompt-injection marker",
+            record.get("name"),
+        )
+        return None
     d = Path(skills_dir)
     d.mkdir(parents=True, exist_ok=True)
     safe = _SAFE_NAME.sub("_", str(record.get("name", "skill"))).strip("._") or "skill"

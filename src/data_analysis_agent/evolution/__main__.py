@@ -130,7 +130,11 @@ def cmd_mine_memory(args: argparse.Namespace) -> int:
     from .memory_miner import MemoryMiner
 
     client = AnthropicApiClient(api_key=config.api_key, model=config.model)
-    store = MemoryStore(config.memory_dir())
+    # Match the runtime's leak guard so offline-mined metrics with a numeric
+    # value can't auto-confirm here either (defense-in-depth consistency).
+    from ..security.sanitizer import has_numeric_leak
+
+    store = MemoryStore(config.memory_dir(), leak_check=has_numeric_leak)
     miner = MemoryMiner(config.trajectories_dir(), store, llm_extract(client))
     written = miner.mine()
     print(f"挖掘到 {len(written)} 条记忆(metric 写为未确认,待轻确认)。")
@@ -161,9 +165,13 @@ def cmd_synthesize(args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     config = AgentConfig.from_env()
     candidates = load_skills(config.skills_dir(), statuses=("candidate",))
+    proposed = load_skills(config.skills_dir(), statuses=("proposed_promote",))
     active = load_skills(config.skills_dir(), statuses=("active",))
     print(f"active 技能: {[s.name for s in active]}")
-    print(f"candidate 技能(待评估/人审): {[s.name for s in candidates]}")
+    print(
+        f"proposed_promote 技能(已过 eval,待人审 `evolution approve`): {[s.name for s in proposed]}"
+    )
+    print(f"candidate 技能(待评估): {[s.name for s in candidates]}")
     return 0
 
 

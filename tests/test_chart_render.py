@@ -156,6 +156,48 @@ async def test_grouped_bar_multi_series(tmp_path: Path):
     assert all("stack" not in s for s in series)
 
 
+async def test_recommended_family_from_select_family(tmp_path: Path):
+    """select_family is exercised in production: chart_render surfaces a
+    recommended_family in metadata (closes the 'select_family never called' gap)."""
+    tool = _tool(tmp_path)
+    # Multi-series comparison -> select_family recommends grouped_bar.
+    multi = await tool.call(
+        {
+            "block_id": "c1",
+            "family": "grouped_bar",
+            "data": {
+                "labels": ["a", "b"],
+                "series": [{"name": "A", "values": [1, 2]}, {"name": "B", "values": [3, 4]}],
+            },
+        }
+    )
+    assert multi.metadata["chart_meta"]["recommended_family"] == "grouped_bar"
+
+    # Time-series single series (>= MIN_TREND_POINTS) -> recommends line.
+    ts = await tool.call(
+        {
+            "block_id": "c2",
+            "family": "line",
+            "data": {
+                "labels": ["d1", "d2", "d3", "d4"],
+                "series": [{"name": "GMV", "values": [1, 2, 3, 4]}],
+                "is_time_series": True,
+            },
+        }
+    )
+    assert ts.metadata["chart_meta"]["recommended_family"] == "line"
+
+    # Scatter is a shape select_family doesn't cover -> None (no crash).
+    sc = await tool.call(
+        {
+            "block_id": "c3",
+            "family": "scatter",
+            "data": {"points": [[0, 1], [1, 2], [2, 3]]},
+        }
+    )
+    assert sc.metadata["chart_meta"]["recommended_family"] is None
+
+
 async def test_stacked_bar_has_stack(tmp_path: Path):
     tool = _tool(tmp_path)
     result = await tool.call(

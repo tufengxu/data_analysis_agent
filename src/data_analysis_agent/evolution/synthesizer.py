@@ -183,5 +183,7 @@ class SkillSynthesizer:
             record["status"] = "candidate"
             record.setdefault("origin", "synthesized")
             record["source_trajectories"] = [str(t.get("turn_id", "")) for t in cluster.turns]
-            written.append(save_skill(self.skills_dir, record))
+            path = save_skill(self.skills_dir, record)
+            if path is not None:  # None = rejected for prompt-injection markers
+                written.append(path)
         return written

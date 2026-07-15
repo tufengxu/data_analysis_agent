@@ -82,15 +82,17 @@ def to_report_document(
 def _to_reporting_contract(contract: CausalContract) -> ReportContract:
     """从 CausalContract 派生最小 ReportContract(承载 question/field_sources/missing_context)。
 
-    Stage1 适配器是结构中间产物:它保证 FINDING→CAVEAT 邻接与就绪映射(核心不变量),
-    但不单独满足 reporting QA 的全部 traceability/evidence 规则——完整 traceability 由
-    agent 把本读出织入整份报告时补齐。这里只把因果契约已有的溯源字段透传过去。
+    Stage1 适配器保证 FINDING→CAVEAT 邻接与就绪映射(核心不变量),并透传因果契约已有的
+    溯源字段。process_context_refs 标注因果决策工作流(契约→QA→读出→行动计划)作为过程
+    溯源,使 causal_report 产出的文档不会因 contract.no_traceability 被 QA 闸自动拒;更完整
+    的需求/数据溯源仍由 agent 把本读出织入整份报告时补齐。
     """
     return ReportContract(
         question=contract.question,
         report_type=ReportType.AD_HOC,
         field_sources=contract.field_sources,
         missing_context=contract.missing_context,
+        process_context_refs=("causal_decision_workflow",),
     )
 
 

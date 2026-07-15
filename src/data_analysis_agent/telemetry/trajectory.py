@@ -33,6 +33,10 @@ from .feedback import FeedbackRecord
 _DIGEST_CHARS = 2000
 _INPUT_DIGEST_CHARS = 1000
 _DATA_SUFFIXES = (".csv", ".tsv", ".xlsx", ".xls", ".parquet")
+# Total cap on the trajectories dir (one file per session). When exceeded at
+# session start, the oldest OTHER session files are evicted — long-running /
+# automated use can't fill the disk with trajectories.
+_MAX_DIR_BYTES = 512 * 1024 * 1024
 
 
 def _walk_values(obj: Any) -> Iterator[Any]:
@@ -145,6 +149,7 @@ class TrajectoryLogger:
         enable_inputs: bool = True,
         analysis_paths: Sequence[str | Path] | None = None,
         home: Path | None = None,
+        max_dir_bytes: int = _MAX_DIR_BYTES,
     ) -> None:
         self.dir = Path(trajectories_dir)
         self.session_id = session_id
@@ -152,10 +157,12 @@ class TrajectoryLogger:
         self._enable_inputs = enable_inputs
         self._analysis_paths = list(analysis_paths) if analysis_paths else []
         self._home = home
+        self._max_dir_bytes = max_dir_bytes
         self._store = JsonlStore(self.dir / f"{session_id}.jsonl")
         self.path = self._store.path
         self._last_turn_id: str | None = None
         self._reset()
+        self._enforce_disk_cap()
 
     def _reset(self) -> None:
         self._active = False
@@ -278,6 +285,36 @@ class TrajectoryLogger:
 
     def _flush(self, record: TurnRecord) -> bool:
         return self._store.append({"type": "turn", **asdict(record)})
+
+    def _enforce_disk_cap(self) -> None:
+        """Best-effort: if the trajectories dir exceeds the cap, evict the oldest
+        OTHER session files (never the current session's own file). Best-effort —
+        telemetry must never break the live loop on a filesystem error.
+        """
+        import contextlib
+
+        cap = self._max_dir_bytes
+        try:
+            files = [p for p in self.dir.glob("*.jsonl") if p != self._store.path]
+            sized = []
+            total = 0
+            for p in files:
+                with contextlib.suppress(OSError):
+                    sz = p.stat().st_size
+                    sized.append((p, sz))
+                    total += sz
+            if total <= cap:
+                return
+            # Evict oldest-by-mtime until under cap.
+            sized.sort(key=lambda ps: ps[0].stat().st_mtime if ps[0].exists() else 0)
+            for p, sz in sized:
+                if total <= cap:
+                    break
+                with contextlib.suppress(OSError):
+                    p.unlink()
+                total -= sz
+        except OSError:
+            return
 
 
 def load_turns(path: str | Path) -> list[dict[str, object]]:

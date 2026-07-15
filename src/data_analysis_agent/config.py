@@ -42,7 +42,14 @@ class AgentConfig:
         "pd.read_excel — relative paths do not resolve in the execution sandbox. "
         "For multi-sheet or multi-file work: profile each source, decide the join keys, "
         "then merge/concat in python_analysis; the kernel keeps state across calls, so "
-        "load each table once and reuse the variables."
+        "load each table once and reuse the variables.\n"
+        "Report delivery workflow: for any report/汇报 request, run report_need → "
+        "report_context → report_contract BEFORE rendering, then build a ReportDocument "
+        "(executive summary first, findings with evidence_refs, charts via chart_render, "
+        "recommendations, caveats, data_scope) and call html_report with that `document`. "
+        "The QA gate REFUSES a DRAFT report (missing contract / executive summary / data_scope "
+        "/ chart spec) — fix the blockers it lists. Do not call the legacy title/sections form "
+        "for business reports; it skips the QA gate. Hard rule: no contract, no render."
     )
 
     # Tool settings
