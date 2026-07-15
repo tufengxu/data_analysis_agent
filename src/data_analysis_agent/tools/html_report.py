@@ -44,6 +44,9 @@ DEFAULT_ECHARTS_SRC = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.j
 MAX_SECTIONS = 30
 MAX_TABLE_ROWS = 200
 MAX_OPTION_CHARS = 2_000_000
+# Cap for inlining a local echarts build (the minified v5 build is ~1MB); blocks
+# inlining an arbitrary large file via echarts_src.
+MAX_ECHARTS_INLINE_CHARS = 8_000_000
 DEFAULT_CHART_HEIGHT = 360
 MIN_CHART_HEIGHT = 120
 MAX_CHART_HEIGHT = 1200
@@ -611,15 +614,29 @@ class HtmlReportTool(Tool):
         )
 
     def _echarts_tag(self) -> str:
-        """CDN URL → script src tag; local file path → inline embed (offline)."""
+        """CDN URL → script src tag; local file path → inline embed (offline).
+
+        Security: a local path is only inlined if it looks like an echarts build
+        (contains the ``echarts`` sentinel and is under a size cap). Arbitrary
+        files are refused and fall back to the CDN — otherwise a local echarts_src
+        pointed at a non-echarts file would inline arbitrary JS into every
+        delivered report (an exfiltration vector when the HTML is shared).
+        """
         src = self.echarts_src
         if src.startswith(("http://", "https://")):
             return f'<script src="{html.escape(src, quote=True)}"></script>'
         local = Path(src).expanduser()
+        # Stat before reading: a misconfigured echarts_src pointing at a huge
+        # file must not be slurped into memory before the cap rejects it.
         try:
+            if local.stat().st_size > MAX_ECHARTS_INLINE_CHARS:
+                return f'<script src="{html.escape(DEFAULT_ECHARTS_SRC, quote=True)}"></script>'
             payload = local.read_text(encoding="utf-8")
         except OSError:
             # Fall back to the default CDN rather than shipping a chartless page.
+            return f'<script src="{html.escape(DEFAULT_ECHARTS_SRC, quote=True)}"></script>'
+        if "echarts" not in payload.lower():
+            # Refuse to inline non-echarts content; use the CDN.
             return f'<script src="{html.escape(DEFAULT_ECHARTS_SRC, quote=True)}"></script>'
         return "<script>" + payload.replace("</", "<\\/") + "</script>"
 

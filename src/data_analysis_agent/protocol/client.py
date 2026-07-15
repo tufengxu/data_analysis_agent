@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 from collections.abc import AsyncIterator
@@ -146,6 +147,11 @@ class AnthropicApiClient:
 
         Yields incremental ContentBlocks (TextBlock, ToolUseBlock) during
         streaming, and a final ModelResponse with stop_reason.
+
+        Retries transient errors (rate limit / timeout / connection) ONLY before
+        any block has been yielded — once output has started, retrying would
+        duplicate it, so a mid-stream failure propagates as recoverable for the
+        agent loop's recovery policy. Mirrors call_model's retry intent.
         """
         max_tokens = max_tokens or self.DEFAULT_MAX_TOKENS
         params: dict[str, Any] = {
@@ -161,102 +167,133 @@ class AnthropicApiClient:
         if tool_choice:
             params["tool_choice"] = tool_choice
 
-        current_text = ""
-        current_tool_use: dict[str, Any] | None = None
-        current_tool_input_json = ""
-        content_blocks: list[ContentBlock] = []
-        stop_reason: str | None = None
-        model_id = self.model
-        usage: dict[str, int] = {}
+        anthropic = _import_anthropic()
+        retryable_types = tuple(
+            t
+            for t in (
+                getattr(anthropic, "RateLimitError", None),
+                getattr(anthropic, "APITimeoutError", None),
+                getattr(anthropic, "APIConnectionError", None),
+            )
+            if t is not None
+        )
 
-        try:
-            async with self._client.messages.stream(**params) as stream:
-                async for event in stream:
-                    event_type = event.type
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            current_text = ""
+            current_tool_use: dict[str, Any] | None = None
+            current_tool_input_json = ""
+            content_blocks: list[ContentBlock] = []
+            stop_reason: str | None = None
+            model_id = self.model
+            usage: dict[str, int] = {}
+            yielded_any = False
 
-                    if event_type == "content_block_start":
-                        block = event.content_block
-                        if block.type == "text":
-                            current_text = ""
-                        elif block.type == "tool_use":
-                            current_tool_use = {
-                                "id": block.id,
-                                "name": block.name,
-                            }
-                            current_tool_input_json = ""
+            try:
+                async with self._client.messages.stream(**params) as stream:
+                    async for event in stream:
+                        event_type = event.type
 
-                    elif event_type == "content_block_delta":
-                        delta = event.delta
-                        if delta.type == "text_delta":
-                            current_text += delta.text
-                            yield TextBlock(text=delta.text)
-                        elif delta.type == "input_json_delta":
-                            current_tool_input_json += delta.partial_json
+                        if event_type == "content_block_start":
+                            block = event.content_block
+                            if block.type == "text":
+                                current_text = ""
+                            elif block.type == "tool_use":
+                                current_tool_use = {
+                                    "id": block.id,
+                                    "name": block.name,
+                                }
+                                current_tool_input_json = ""
 
-                    elif event_type == "content_block_stop":
-                        if current_tool_use is not None:
-                            import json
+                        elif event_type == "content_block_delta":
+                            delta = event.delta
+                            if delta.type == "text_delta":
+                                current_text += delta.text
+                                yielded_any = True
+                                yield TextBlock(text=delta.text)
+                            elif delta.type == "input_json_delta":
+                                current_tool_input_json += delta.partial_json
 
-                            try:
-                                tool_input = json.loads(current_tool_input_json)
-                            except json.JSONDecodeError:
-                                tool_input = {}
-                            tool_block = ToolUseBlock(
-                                id=current_tool_use["id"],
-                                name=current_tool_use["name"],
-                                input=tool_input,
-                            )
-                            content_blocks.append(tool_block)
-                            yield tool_block
-                            current_tool_use = None
-                            current_tool_input_json = ""
-                        elif current_text:
-                            content_blocks.append(TextBlock(text=current_text))
-                            current_text = ""
+                        elif event_type == "content_block_stop":
+                            if current_tool_use is not None:
+                                import json
 
-                    elif event_type == "message_start":
-                        # Streaming usage: input tokens arrive at message_start,
-                        # output tokens accumulate on message_delta. The int guard
-                        # avoids writing a non-int (a future SDK shape change) that
-                        # would masquerade as real usage and bypass the estimate
-                        # fallback; a missing attr degrades to estimate, not crash.
-                        with contextlib.suppress(AttributeError):
-                            value = event.message.usage.input_tokens
-                            if isinstance(value, int):
-                                usage["input_tokens"] = value
+                                try:
+                                    tool_input = json.loads(current_tool_input_json)
+                                except json.JSONDecodeError:
+                                    tool_input = {}
+                                tool_block = ToolUseBlock(
+                                    id=current_tool_use["id"],
+                                    name=current_tool_use["name"],
+                                    input=tool_input,
+                                )
+                                content_blocks.append(tool_block)
+                                yielded_any = True
+                                yield tool_block
+                                current_tool_use = None
+                                current_tool_input_json = ""
+                            elif current_text:
+                                content_blocks.append(TextBlock(text=current_text))
+                                current_text = ""
 
-                    elif event_type == "message_delta":
-                        if event.delta.stop_reason:
-                            stop_reason = event.delta.stop_reason
-                        with contextlib.suppress(AttributeError):
-                            value = event.usage.output_tokens
-                            if isinstance(value, int):
-                                usage["output_tokens"] = value
+                        elif event_type == "message_start":
+                            # Streaming usage: input tokens arrive at message_start,
+                            # output tokens accumulate on message_delta. The int guard
+                            # avoids writing a non-int (a future SDK shape change) that
+                            # would masquerade as real usage and bypass the estimate
+                            # fallback; a missing attr degrades to estimate, not crash.
+                            with contextlib.suppress(AttributeError):
+                                value = event.message.usage.input_tokens
+                                if isinstance(value, int):
+                                    usage["input_tokens"] = value
 
-                    elif event_type == "message_stop":
-                        pass
+                        elif event_type == "message_delta":
+                            if event.delta.stop_reason:
+                                stop_reason = event.delta.stop_reason
+                            with contextlib.suppress(AttributeError):
+                                value = event.usage.output_tokens
+                                if isinstance(value, int):
+                                    usage["output_tokens"] = value
 
-        except Exception as e:
-            anthropic = _import_anthropic()
-            if isinstance(e, anthropic.AuthenticationError):
-                raise AnthropicClientError(f"Authentication failed: {e}") from e
-            if isinstance(e, anthropic.BadRequestError):
-                if "prompt is too long" in str(e).lower() or getattr(e, "status_code", 0) == 413:
+                        elif event_type == "message_stop":
+                            pass
+
+            except Exception as e:
+                if isinstance(e, anthropic.AuthenticationError):
+                    raise AnthropicClientError(f"Authentication failed: {e}") from e
+                if isinstance(e, anthropic.BadRequestError):
+                    if (
+                        "prompt is too long" in str(e).lower()
+                        or getattr(e, "status_code", 0) == 413
+                    ):
+                        raise AnthropicClientError(
+                            "Prompt too long",
+                            is_recoverable=True,
+                        ) from e
+                    raise AnthropicClientError(f"Bad request: {e}") from e
+                if isinstance(e, anthropic.APIError):
+                    # Retry transient errors only if nothing has been yielded yet
+                    # (mid-stream retry would duplicate output). After the last
+                    # attempt, or once output started, surface as recoverable so
+                    # the agent loop's recovery policy can react.
+                    if (
+                        not yielded_any
+                        and retryable_types
+                        and isinstance(e, retryable_types)
+                        and attempt < max_attempts
+                    ):
+                        await asyncio.sleep(min(2**attempt, 10))
+                        continue
                     raise AnthropicClientError(
-                        "Prompt too long",
+                        f"API error: {e}",
                         is_recoverable=True,
                     ) from e
-                raise AnthropicClientError(f"Bad request: {e}") from e
-            if isinstance(e, anthropic.APIError):
-                raise AnthropicClientError(
-                    f"API error: {e}",
-                    is_recoverable=True,
-                ) from e
-            raise
+                raise
 
-        yield ModelResponse(
-            content=content_blocks,
-            stop_reason=stop_reason,
-            model=model_id,
-            usage=usage,
-        )
+            yield ModelResponse(
+                content=content_blocks,
+                stop_reason=stop_reason,
+                model=model_id,
+                usage=usage,
+            )
+            return

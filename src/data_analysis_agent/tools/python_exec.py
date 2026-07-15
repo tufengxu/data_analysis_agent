@@ -50,6 +50,10 @@ _spawn_subprocess = asyncio.create_subprocess_exec
 # caveat (RLIMIT_AS is a no-op on Darwin; only FSIZE/CPU are enforced there).
 _RLIMIT_FSIZE_BYTES = 4 * 1024 * 1024 * 1024  # 4 GB cap on a single file written
 _RLIMIT_AS_BYTES = 4 * 1024 * 1024 * 1024  # 4 GB address-space cap (Linux only)
+# Cap on a single image read into the PARENT process memory (the sandbox can
+# write a huge image; reading it verbatim here would OOM the agent). Oversized
+# images are skipped with a note rather than read.
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 def _apply_rlimits(cpu_seconds: int) -> None:
@@ -551,6 +555,15 @@ class PythonAnalysisTool(Tool):
             if item.get("type") == "image":
                 img_path = item.get("path")
                 if img_path and Path(img_path).exists():
+                    # Cap the read so a runaway image in the sandbox cannot OOM
+                    # the parent process; skip oversized images with a note.
+                    size = Path(img_path).stat().st_size
+                    if size > _MAX_IMAGE_BYTES:
+                        result_parts.append(
+                            f"[image skipped: {Path(img_path).name} is {size} bytes > "
+                            f"{_MAX_IMAGE_BYTES} cap; save a smaller copy]"
+                        )
+                        continue
                     with open(img_path, "rb") as img:
                         b64 = base64.b64encode(img.read()).decode()
                     # path lets the artifact seam reuse an already-delivered
