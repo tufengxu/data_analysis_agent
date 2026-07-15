@@ -51,6 +51,7 @@ from .recovery import RecoveryPolicy
 from .sampling import SamplingConfig, compact_result
 from .sampling.result_store import ResultStore
 from .security.permissions import PermissionEngine
+from .security.sanitizer import frame_as_data, strip_structural
 from .security.tool_gate import ToolGate
 from .skills.base import Skill
 from .skills.registry import SkillRegistry
@@ -491,9 +492,14 @@ class AgentLoop:
         base = self.config.system_prompt or ""
 
         if active_skill:
+            # Skill instructions can originate from synthesized (declarative)
+            # skills mined off trajectory data; strip STRUCTURAL injection
+            # carriers (role spoofing / control tokens / override directives)
+            # before appending. A no-op for the trusted built-in corpus.
+            clean_instructions = strip_structural(active_skill.instructions)
             skill_header = (
                 f"\n\n## Active Skill: {active_skill.name}\n\n"
-                f"{active_skill.instructions}\n\n"
+                f"{clean_instructions}\n\n"
                 "Skill priority rule: this skill is available and must be used "
                 "before general-purpose tools or generic reasoning. Only use the "
                 "tools listed for this skill unless the user explicitly asks for "
@@ -513,7 +519,10 @@ class AgentLoop:
             if query:
                 memory_text = self.memory_injector(query)
                 if memory_text:
-                    base = base + memory_text
+                    # Recalled memory is untrusted trajectory-derived DATA: strip
+                    # structural injection and frame it as reference data, not as
+                    # operator authority.
+                    base = base + frame_as_data(strip_structural(memory_text))
 
         return base if base else None
 

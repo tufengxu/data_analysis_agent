@@ -8,6 +8,7 @@ Keyed by (kind, key) upsert so re-stating a metric updates it in place.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from ..jsonl_store import JsonlStore
@@ -23,9 +24,18 @@ def _tokens(text: str) -> set[str]:
 class MemoryStore:
     """Disk-backed store of MemoryEntry, keyed by (kind, key)."""
 
-    def __init__(self, store_dir: str | Path, *, max_entries: int = 500) -> None:
+    def __init__(
+        self,
+        store_dir: str | Path,
+        *,
+        max_entries: int = 500,
+        leak_check: Callable[[str], bool] | None = None,
+    ) -> None:
         self.dir = Path(store_dir)
         self.max_entries = max_entries
+        # Injected (memory may not import security per the drift rules): returns
+        # True if a metric's content carries a numeric value (ADR 0004 leak).
+        self._leak_check = leak_check
         self._store = JsonlStore(self.dir / "memory.jsonl")
         self._index: dict[tuple[str, str], MemoryEntry] = {}
         self._load()
@@ -44,6 +54,10 @@ class MemoryStore:
             # Preserve accumulated trust/recency on re-statement.
             entry.created_at = existing.created_at
             entry.use_count = max(entry.use_count, existing.use_count)
+        # ADR 0004 leak guard: a metric carrying a numeric VALUE is never
+        # auto-confirmed (see note_accepted_use). We do NOT downgrade an entry
+        # the caller explicitly marked confirmed=True (e.g. /define) — that is a
+        # human-stated definition, not a mined value.
         self._index[(entry.kind, entry.key)] = entry
         self._evict()
         self._rewrite()
@@ -96,13 +110,23 @@ class MemoryStore:
 
     def note_accepted_use(self, kind: str, key: str) -> None:
         """Record a use the user did NOT push back on; a metric auto-confirms
-        after enough such accepted uses (ADR 0004 light-confirm, rephrase-gated)."""
+        after enough such accepted uses (ADR 0004 light-confirm, rephrase-gated).
+
+        A mined metric carrying a numeric VALUE (ADR 0004 violation) is never
+        auto-confirmed — it must wait for an explicit human confirm() so a stale
+        number can't silently pin itself as established.
+        """
         entry = self._index.get((kind, key))
         if entry is None:
             return
         entry.use_count += 1
         entry.last_used_at = _utc_now()
-        if entry.kind == "metric_definition" and entry.use_count >= CONFIRM_AFTER_USES:
+        leaky = self._leak_check(entry.content or "") if self._leak_check is not None else False
+        if (
+            entry.kind == "metric_definition"
+            and entry.use_count >= CONFIRM_AFTER_USES
+            and not leaky
+        ):
             entry.confirmed = True
         self._rewrite()
 

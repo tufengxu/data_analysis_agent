@@ -28,6 +28,7 @@ from .security.permissions import (
     PermissionMode,
     PermissionRule,
 )
+from .security.sanitizer import has_numeric_leak
 from .session import AgentSession
 from .skills.base import Skill
 from .skills.builtin import (
@@ -201,7 +202,7 @@ def _build_memory_injector(config: AgentConfig) -> MemoryInjector | None:
         return None
     return MemoryInjector(
         ProfileStore(config.memory_dir()),
-        MemoryStore(config.memory_dir()),
+        MemoryStore(config.memory_dir(), leak_check=has_numeric_leak),
         budget_tokens=config.memory_inject_budget_tokens,
     )
 

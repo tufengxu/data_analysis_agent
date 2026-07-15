@@ -130,7 +130,11 @@ def cmd_mine_memory(args: argparse.Namespace) -> int:
     from .memory_miner import MemoryMiner
 
     client = AnthropicApiClient(api_key=config.api_key, model=config.model)
-    store = MemoryStore(config.memory_dir())
+    # Match the runtime's leak guard so offline-mined metrics with a numeric
+    # value can't auto-confirm here either (defense-in-depth consistency).
+    from ..security.sanitizer import has_numeric_leak
+
+    store = MemoryStore(config.memory_dir(), leak_check=has_numeric_leak)
     miner = MemoryMiner(config.trajectories_dir(), store, llm_extract(client))
     written = miner.mine()
     print(f"挖掘到 {len(written)} 条记忆(metric 写为未确认,待轻确认)。")

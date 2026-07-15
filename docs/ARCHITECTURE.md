@@ -92,6 +92,7 @@ src/data_analysis_agent/evolution/eval_taxonomy.py = "eval 失败分类学:区�
 src/data_analysis_agent/evolution/__main__.py = "进化离线 CLI:synthesize/mine-memory/list/evaluate;llm_reflect/llm_extract 默认实现"
 src/data_analysis_agent/security/permissions.py = "deny-first 权限引擎(4 层防御)"
 src/data_analysis_agent/security/tool_gate.py = "ToolGate:单次工具授权决策(decide 引擎策略 / validate 自检校验),agent_loop 的测试接缝"
+src/data_analysis_agent/security/sanitizer.py = "确定性 prompt-injection 净化叶(结构性载体剥离 + 注入标记检出 + 数值泄露检出 + 数据框包装;纯 stdlib,agent_loop/skills/runtime 注入 memory)"
 src/data_analysis_agent/sampling/config.py = "SamplingConfig + fidelity 档位预设"
 src/data_analysis_agent/sampling/model.py = "ColumnSummary / TableSummary 数据类"
 src/data_analysis_agent/sampling/render.py = "L3 Markdown 渲染器(共享,带采样警告)"
