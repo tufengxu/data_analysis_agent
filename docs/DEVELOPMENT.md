@@ -5,7 +5,7 @@
 ## 环境
 
 ```bash
-uv pip install -e ".[data,dev]"   # 沙箱会拦 uv 缓存,需放行;装上 pandas 等
+uv pip install -e ".[data,dev,web]"   # 沙箱会拦 uv 缓存,需放行;装上 pandas 等;web 供 mypy 检查 web/
 ```
 
 ## 一次迭代

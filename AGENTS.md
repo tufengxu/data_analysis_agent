@@ -28,7 +28,7 @@ docs/  examples/           文档与示例
 
 ```bash
 cd "/Users/fengxutu/FENGXU TU/Projects/DataAnalysisAgent"
-pip install -e ".[data,dev]"      # 或 uv pip install -e ".[data,dev]"
+pip install -e ".[data,dev,web]"   # 或 uv sync --all-extras --locked(web extra 供质量门 mypy 检查 web/)
 pytest tests/ -v
 ruff check src tests
 mypy src
@@ -65,7 +65,7 @@ python -m data_analysis_agent      # CLI 入口;亦可用 console script `data-a
   `docs/superpowers/specs/2026-06-06-data-sampling-compaction-design.md`。沙箱子进程
   `PYTHONPATH=""` 故 `sandbox_summary.py` 以"读源码内联"注入,且 pandas 可选(缺失即退回原样)。
   内核侧 `kernel/kernel_main.py` 同约束(自包含、组合注入)。
-- **跑测试前需可编辑安装**:`uv pip install -e ".[data,dev]"`(沙箱会拦 uv 缓存,需放行);
+- **跑测试前需可编辑安装**:`uv pip install -e ".[data,dev,web]"`(沙箱会拦 uv 缓存,需放行;web 供质量门 mypy 检查 web/);
   `sampling` 高保真测试依赖 pandas,缺失则 `importorskip` 跳过。
 - **质量准出硬标尺**:每次迭代须过 `scripts/quality_gate.py`(ruff/format/mypy/pytest/drift),
   由阻断式 Stop hook 强制。规范见 `docs/QUALITY_BAR.md` 与 `docs/DEVELOPMENT.md`;架构与 manifest
