@@ -1,0 +1,50 @@
+name: Dependency drift check
+
+# Weekly: bump all deps to latest compatible (`uv lock --upgrade`) and re-run the
+# quality gate. Catches "a new ruff rule / mypy finding / breaking library
+# upgrade" BEFORE it ambushes a real PR. Never blocks main — it runs on schedule
+# or manually, and only ALERTS (opens or updates an issue) when an upgrade breaks
+# the gate. On a green run it stays silent (no drift).
+
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC (off-the-hour to ease runner load)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # open/update the dep-drift alert issue on breakage
+
+concurrency:
+  group: dep-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Bump deps to latest compatible
+        run: uv lock --upgrade
+      - name: Install + quality gate (locked)
+        run: |
+          uv sync --all-extras --locked
+          uv run python scripts/quality_gate.py
+      - name: Alert on breakage
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          printf -v body 'The weekly `uv lock --upgrade` run failed the quality gate.\n\nRun: %s\n\nInspect the per-step summary on the run page (Phase 2). Likely a stricter ruff/mypy release or a breaking dep. Reproduce locally:\n\n    uv lock --upgrade && uv sync --all-extras --locked && uv run python scripts/quality_gate.py\n\nthen pin the offending package or adapt the code.' "$run_url"
+          existing=$(gh issue list --search "dependency drift in:title" --state open --json number --jq '.[0].number' || true)
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body "${body}"
+          else
+            gh issue create --title "dependency drift: uv lock --upgrade broke the quality gate" --body "${body}"
+          fi
