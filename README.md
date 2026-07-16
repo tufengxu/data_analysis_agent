@@ -95,7 +95,7 @@ data_analysis_agent/
 
 ```bash
 cd "/Users/fengxutu/FENGXU TU/Projects/DataAnalysisAgent"
-pip install -e ".[data,dev]"
+pip install -e ".[data,dev,web]"
 ```
 
 ### Configuration
