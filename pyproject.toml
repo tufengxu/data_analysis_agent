@@ -55,13 +55,17 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
 
 [tool.mypy]
-python_version = "3.10"
+# 3.13 = the runtime dev/CI actually use (requires-python is a looser floor).
+# Must be >=3.12 so newer numpy's bundled stub (uses PEP-695 `type` statements)
+# parses; pinning lower made `uv lock --upgrade` break the gate (issue #6).
+python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
 
-# pandas / numpy ship no stubs in this offline-friendly setup; the sandbox
-# summarizer imports them lazily and treats them as untyped on purpose.
+# numpy now ships typed stubs (so ignore_missing_imports is mostly a no-op for
+# it); pandas/pyarrow may still lack stubs in some setups → keep the override so
+# their absence is tolerated rather than flagged.
 [[tool.mypy.overrides]]
 module = ["pandas.*", "numpy.*", "pyarrow.*"]
 ignore_missing_imports = true
