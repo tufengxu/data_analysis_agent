@@ -12,6 +12,7 @@ Modes:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -100,6 +101,29 @@ def _log(passed: bool, results: list[dict[str, object]], total: float) -> None:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _write_step_summary(results: list[dict[str, object]], passed: bool, total: float) -> None:
+    """CI only (GITHUB_STEP_SUMMARY set): write a per-step Markdown table so the
+    Actions run / PR-check page shows WHICH gate step failed (plus a tail of the
+    error) at a glance, not just a red "gate". No-op locally. Does not affect the
+    pass/fail decision — purely additive output."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    lines = ["| step | result | time |", "| --- | --- | --- |"]
+    for r in results:
+        icon = "✅" if r["ok"] else "❌"
+        lines.append(f"| `{r['name']}` | {icon} {'pass' if r['ok'] else 'fail'} | {r['sec']}s |")
+    lines.append(f"\n{'**PASS** ✅' if passed else '**FAIL** ❌'} — {round(total, 2)}s")
+    failed = [r for r in results if not r["ok"] and r.get("out")]
+    if failed:
+        lines.append("\n<details><summary>failure detail</summary>\n")
+        for r in failed:
+            tail = "\n".join(str(r["out"]).splitlines()[-15:])
+            lines.append(f"**{r['name']}**\n```\n{tail}\n```\n")
+        lines.append("</details>")
+    Path(path).write_text("\n".join(lines), encoding="utf-8")
+
+
 def _changed() -> bool:
     """True if src/tests/docs have tracked diffs or untracked files."""
     diff = subprocess.run(["git", "diff", "--quiet", "--", "src", "tests", "docs"], cwd=REPO)
@@ -123,6 +147,7 @@ def main() -> int:
     passed, results = run_gate()
     total = time.perf_counter() - start
     _log(passed, results, total)
+    _write_step_summary(results, passed, total)
     print(f"\n{'PASS' if passed else 'FAIL'} — quality gate ({round(total, 2)}s)")
 
     if hook and not passed:
