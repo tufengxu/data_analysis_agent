@@ -68,8 +68,16 @@ class PermissionResult:
 class PermissionEngine:
     """Core permission engine with deny-first evaluation."""
 
-    def __init__(self, mode: PermissionMode = PermissionMode.DEFAULT):
+    def __init__(
+        self,
+        mode: PermissionMode = PermissionMode.DEFAULT,
+        *,
+        default_behavior: PermissionBehavior = PermissionBehavior.ASK,
+    ):
         self.mode = mode
+        # Fall-through behavior when no rule matches. ASK preserves the original
+        # interactive posture; DENY gives deny-by-default presets (e.g. local_safe).
+        self.default_behavior = default_behavior
         self.deny_rules: list[PermissionRule] = []
         self.ask_rules: list[PermissionRule] = []
         self.allow_rules: list[PermissionRule] = []
@@ -110,5 +118,8 @@ class PermissionEngine:
             if rule.matches(tool_name):
                 return PermissionResult.allow(f"Matched allow rule: {rule.tool_pattern}")
 
-        # Default: ask for confirmation
+        # Default: fall through to the engine's configured default behavior. ASK
+        # keeps the interactive posture; DENY backs deny-by-default presets.
+        if self.default_behavior == PermissionBehavior.DENY:
+            return PermissionResult.deny("No matching rule; denied by preset default")
         return PermissionResult.ask("No matching rule, confirmation required")
