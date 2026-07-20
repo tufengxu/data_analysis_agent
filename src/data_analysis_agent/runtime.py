@@ -61,6 +61,7 @@ from .tools import (
     VisualizationTool,
 )
 from .tools.retrieve_result import RetrieveResultTool
+from .workspace import Project, new_run_id
 
 # Tools that never mutate state; auto-allowed in default permission mode.
 READ_ONLY_TOOLS = (
@@ -207,6 +208,19 @@ def _build_memory_injector(config: AgentConfig) -> MemoryInjector | None:
     )
 
 
+def _project_result_store(config: AgentConfig, store_dir: Path) -> Any:
+    """Build a ResultStore under a project run dir, reusing the config size/TTL knobs."""
+    from .sampling.result_store import ResultStore
+
+    store_dir.mkdir(parents=True, exist_ok=True)
+    return ResultStore(
+        store_dir,
+        ttl_seconds=config.result_store_ttl_seconds,
+        max_total_bytes=config.result_store_max_total_mb * 1024 * 1024,
+        max_entry_bytes=config.result_store_max_entry_mb * 1024 * 1024,
+    )
+
+
 @dataclass
 class AgentRuntime:
     """All session-scoped components, assembled once."""
@@ -216,6 +230,8 @@ class AgentRuntime:
     kernel: KernelManager | None
     artifacts_dir: Path
     memory_injector: MemoryInjector | None = None
+    project: Project | None = None
+    run_id: str | None = None
 
     async def shutdown(self) -> None:
         if self.kernel is not None:
@@ -231,9 +247,15 @@ class AgentRuntime:
         client: Any = None,
         extra_skills: Sequence[Skill] = (),
         analysis_paths: Sequence[str | Path] | None = None,
+        project: Project | None = None,
     ) -> AgentRuntime:
         """Assemble loop + session from config. Feature switches (kernel/memory/
-        telemetry) come from the config; one-off overrides are explicit kwargs."""
+        telemetry) come from the config; one-off overrides are explicit kwargs.
+
+        When ``project`` is given, session-facing state (artifacts / kernel
+        workspace / results / message store) is routed under the project root and a
+        fresh ``run_id`` is allocated; otherwise behaviour is unchanged.
+        """
         loop_config = AgentLoopConfig(
             system_prompt=config.system_prompt,
             max_turns=config.max_turns,
@@ -242,14 +264,31 @@ class AgentRuntime:
             api_key=config.api_key,
         )
         sampling_config = config.sampling_config()
+        run_id: str | None = None
+        effective_persist_path: str | Path | None = persist_path
+        kernel_work_dir: Path | None = None
+        if project is not None:
+            run_id = new_run_id()
+            effective_persist_path = str(project.session_path(run_id))
+            artifacts_dir = project.artifacts_dir
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            # Contained under the project root, so fine to materialise up front:
+            # the workspace layout stays inspectable even when no kernel runs.
+            kernel_work_dir = project.kernel_work_dir(run_id)
+            kernel_work_dir.mkdir(parents=True, exist_ok=True)
+            result_store = _project_result_store(config, project.results_dir_for(run_id))
+        else:
+            artifacts_dir = config.artifacts_dir(persist_path)
+            result_store = config.result_store(persist_path)
         kernel: KernelManager | None = None
         if config.persistent_kernel:
+            # Non-project: resolve lazily HERE so persistent_kernel=False does not
+            # create a stray kernel tempdir (preserves pre-slice behaviour).
+            work_dir = kernel_work_dir or config.kernel_work_dir(persist_path)
             kernel = KernelManager(
                 sampling_config=sampling_config,
-                work_dir=config.kernel_work_dir(persist_path),
+                work_dir=work_dir,
             )
-        artifacts_dir = config.artifacts_dir(persist_path)
-        result_store = config.result_store(persist_path)
         registry = build_registry(
             config,
             result_store=result_store,
@@ -262,7 +301,7 @@ class AgentRuntime:
             enable_snip=True,
             enable_collapse=True,
         )
-        store = build_message_store(persist_path)
+        store = build_message_store(effective_persist_path)
         injector = _build_memory_injector(config)
         memory_injector = injector.render if injector is not None else None
         memory_recorder = injector.record_tool if injector is not None else None
@@ -302,4 +341,6 @@ class AgentRuntime:
             kernel=kernel,
             artifacts_dir=artifacts_dir,
             memory_injector=injector,
+            project=project,
+            run_id=run_id,
         )
