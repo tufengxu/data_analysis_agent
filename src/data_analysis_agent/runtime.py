@@ -53,6 +53,7 @@ from .tools import (
     ExperimentReadoutTool,
     FileReadTool,
     HtmlReportTool,
+    JoinPlannerTool,
     NlQueryTool,
     PythonAnalysisTool,
     ReportContextTool,
@@ -69,6 +70,7 @@ READ_ONLY_TOOLS = (
     "read_file",
     "data_profile",
     "data_quality",
+    "join_planner",
     "nl_query",
     "retrieve_result",
     "report_need",
@@ -107,6 +109,7 @@ def build_registry(
     registry.register(FileReadTool(allowed_paths=paths))
     registry.register(DataProfileTool(allowed_paths=paths))
     registry.register(DataQualityTool(allowed_paths=paths))
+    registry.register(JoinPlannerTool(allowed_paths=paths))
     registry.register(
         PythonAnalysisTool(
             sampling_config=sampling_config,
