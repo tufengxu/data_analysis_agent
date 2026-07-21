@@ -7,6 +7,7 @@ from .causal_qa import CausalQATool
 from .causal_report import CausalReportTool
 from .chart_render import ChartRenderTool
 from .data_profile import DataProfileTool
+from .data_quality import DataQualityTool
 from .experiment_readout import ExperimentReadoutTool
 from .file_read import FileReadTool
 from .html_report import HtmlReportTool
@@ -26,6 +27,7 @@ __all__ = [
     "CausalReportTool",
     "ChartRenderTool",
     "DataProfileTool",
+    "DataQualityTool",
     "ExperimentReadoutTool",
     "FileReadTool",
     "HtmlReportTool",

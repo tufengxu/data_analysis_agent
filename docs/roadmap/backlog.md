@@ -55,7 +55,10 @@
 
 ### P1-4 数据分析工具硬化（缺口）
 
-- [ ] P1-4.1 `data_quality` 工具（缺失值/重复/异常/口径）
+- [x] P1-4.1 `data_quality` 工具（缺失值/重复/异常/口径）— ✅ PR #14（feat/data-quality）。
+      8 flag + 全量读+1M cap+truncation + file-only（与 data_profile 结构发现互补）。三轮独立审查收敛（0/0）。
+      跟进（minor，advisory）：① 0/1 编码整数列（CSV 里的语义布尔 is_vip 等）仍触发 `high_outliers`
+      ——难与合法 0/1 数值区分，启发式两难；② 单行表退化情形每列标 `constant`（n_rows>1 门可收紧）。
 - [ ] P1-4.2 `join_planner`
 - [ ] P1-4.3 `metric_contract` 工具
 - [ ] P1-4.6 nl_query schema-aware 升级（部分）
