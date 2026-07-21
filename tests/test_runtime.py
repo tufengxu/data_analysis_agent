@@ -15,6 +15,7 @@ _PROD_TOOLS = {
     "read_file",
     "data_profile",
     "data_quality",
+    "join_planner",
     "python_analysis",
     "nl_query",
     "visualization",
