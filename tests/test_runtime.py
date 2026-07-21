@@ -14,6 +14,7 @@ from data_analysis_agent.skills.loader import DeclarativeSkill
 _PROD_TOOLS = {
     "read_file",
     "data_profile",
+    "data_quality",
     "python_analysis",
     "nl_query",
     "visualization",
