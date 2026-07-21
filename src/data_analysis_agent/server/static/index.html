@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>DAA Workbench (MVP)</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        margin: 1.5rem;
+        max-width: 960px;
+      }
+      #q {
+        width: 70%;
+        padding: 0.4rem;
+      }
+      #out {
+        background: #f6f6f6;
+        padding: 0.75rem;
+        white-space: pre-wrap;
+        border-radius: 4px;
+        min-height: 4rem;
+      }
+      #tools li {
+        font-family: ui-monospace, monospace;
+      }
+      .err {
+        color: #b00;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Data Analysis Agent — Web Workbench (MVP)</h2>
+    <p>
+      <input
+        id="paths"
+        placeholder="授权数据路径(绝对路径,逗号分隔)"
+        style="width: 70%; padding: 0.3rem"
+      />
+    </p>
+    <p>
+      <input
+        id="q"
+        placeholder="自然语言分析请求"
+        style="width: 70%; padding: 0.4rem"
+      />
+      <button onclick="run()">运行</button>
+    </p>
+    <h3>工具调用</h3>
+    <ul id="tools"></ul>
+    <h3>回答</h3>
+    <pre id="out"></pre>
+
+    <script>
+      async function run() {
+        const q = document.getElementById("q").value;
+        const rawPaths = document.getElementById("paths").value;
+        const paths = rawPaths
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        const out = document.getElementById("out");
+        const tools = document.getElementById("tools");
+        out.textContent = "";
+        out.className = "";
+        tools.innerHTML = "";
+        const resp = await fetch("/api/run/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q, paths: paths }),
+        });
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf("\n\n")) >= 0) {
+            const chunk = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            if (!chunk.startsWith("data: ")) continue;
+            handle(JSON.parse(chunk.slice(6)), out, tools);
+          }
+        }
+      }
+      function handle(ev, out, tools) {
+        if (ev.type === "stream_text") out.textContent += ev.text;
+        else if (ev.type === "tool_use") {
+          const li = document.createElement("li");
+          li.textContent = "🔧 " + ev.tool_name;
+          tools.appendChild(li);
+        } else if (ev.type === "complete") {
+          out.textContent += "\n\n[完成: " + ev.terminal_reason + "]";
+        } else if (ev.type === "error") {
+          out.textContent += "\n[错误: " + ev.error + "]";
+          out.className = "err";
+        }
+      }
+    </script>
+  </body>
+</html>
