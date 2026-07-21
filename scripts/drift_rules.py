@@ -229,6 +229,31 @@ IMPORT_RULES: list[dict[str, object]] = [
             "data_analysis_agent.__main__",
         ],
     },
+    # server 是 live-agent workbench 表现层(Wave2):组合 runtime(与 CLI 同源)+ SSE 事件流,
+    # 复用 web 的纯 reporting 表现层不变。禁直接耦合 agent_loop/protocol/tools 等(走 runtime
+    # 接缝)。web 不在禁入表(server 在 web 之上,可单向复用其静态/预览)。事件 codec 映射 events。
+    {
+        "who": "data_analysis_agent.server",
+        "forbid": [
+            "data_analysis_agent.agent_loop",
+            "data_analysis_agent.protocol",
+            "data_analysis_agent.tools",
+            "data_analysis_agent.skills",
+            "data_analysis_agent.session",
+            "data_analysis_agent.kernel",
+            "data_analysis_agent.context",
+            "data_analysis_agent.security",
+            "data_analysis_agent.sampling",
+            "data_analysis_agent.persistence",
+            "data_analysis_agent.state_machine",
+            "data_analysis_agent.evolution",
+            "data_analysis_agent.telemetry",
+            "data_analysis_agent.memory",
+            "data_analysis_agent.recovery",
+            "data_analysis_agent.reporting",
+            "data_analysis_agent.causal",
+        ],
+    },
 ]
 
 # Documents scanned for dead repo-path references.
