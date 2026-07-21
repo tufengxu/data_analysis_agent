@@ -528,12 +528,35 @@ def _run_project_cli(argv: Sequence[str]) -> None:
                 )
 
 
+def _run_doctor() -> None:
+    """`data-agent doctor` — print a pass/warn/fail health report; exit 1 on any FAIL."""
+    from .doctor import check_all
+
+    results = check_all(AgentConfig.from_env())
+    icon = {
+        "pass": "[green]✓[/green]",
+        "warn": "[yellow]![/yellow]",
+        "fail": "[red]✗[/red]",
+        "info": "[dim]·[/dim]",
+    }
+    for r in results:
+        console.print(f"{icon.get(r.status, '·')} {r.name:<20} {r.detail}")
+    fails = sum(1 for r in results if r.status == "fail")
+    warns = sum(1 for r in results if r.status == "warn")
+    console.print(f"\n[bold]{len(results)} checks · {fails} fail · {warns} warn[/bold]")
+    if fails:
+        sys.exit(1)
+
+
 def main() -> None:
     """Main CLI entry point."""
     # `data-agent project ...` is dispatched before top-level argparse so the
     # subcommand token is not mistaken for a natural-language query.
     if len(sys.argv) > 1 and sys.argv[1] == "project":
         _run_project_cli(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        _run_doctor()
         return
     import argparse
 
