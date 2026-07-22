@@ -107,6 +107,7 @@ class MetricSpec(Serializable):
     denominator: str | None = None
     aggregation: str | None = None
     filters: tuple[str, ...] = ()
+    exclusions: tuple[str, ...] = ()
     time_window: str | None = None
     grain: str | None = None
     timezone: str | None = None

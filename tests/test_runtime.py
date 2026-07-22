@@ -16,6 +16,7 @@ _PROD_TOOLS = {
     "data_profile",
     "data_quality",
     "join_planner",
+    "metric_contract",
     "python_analysis",
     "nl_query",
     "visualization",
