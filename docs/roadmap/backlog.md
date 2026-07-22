@@ -63,7 +63,13 @@
       候选键(同名列)/唯一性→关系(1:1/1:N/N:1/N:N)/值覆盖/估算连接行数/行乘积风险(high iff N:N)/
       null-key 风险/推荐顺序(大表为锚，优先入端 unique)。两轮独立审查收敛 0/0。
       跟进（minor）：跨名值重叠(cust_id↔id)与 case-insensitive 匹配（更模糊，留 follow-up）。
-- [ ] P1-4.3 `metric_contract` 工具
+- [x] P1-4.3 `metric_contract` 工具 — ✅ PR #16（feat/metric-contract）。只读口径规整：name/
+      numerator/denominator/aggregation/filters/exclusions/time_window/grain/timezone/unit →
+      MetricSpec（新增 exclusions 字段，additive 向后兼容）+ 完整性校验（复用 QA 判据）+
+      memory_definition 交叉核对（confirmed/unconfirmed/absent + 名字一致性）+ signature。
+      无状态无路径（镜像 report_contract）。一轮独立审查收敛 0/0（MetricSpec.exclusions 跨
+      reporting 链 additive 安全经探针验证）。**P1-4 工具硬化三部曲完成**（data_quality → join_planner → metric_contract）。
+      跟进（minor）：live memory store 注入 tool（当前输入传入）；fuzzy 文本冲突判定；exclusions 进 html_report caveat。
 - [ ] P1-4.6 nl_query schema-aware 升级（部分）
 - [ ] P1-4.7 Excel 多表工作流（部分）
 
