@@ -123,7 +123,9 @@ def build_registry(
     registry.register(VisualizationTool(artifact_dir=artifact_dir))
     registry.register(RetrieveResultTool(result_store=result_store))
     report_kwargs = {"echarts_src": echarts_src} if echarts_src else {}
-    registry.register(HtmlReportTool(artifact_dir=artifact_dir, **report_kwargs))
+    registry.register(
+        HtmlReportTool(artifact_dir=artifact_dir, result_store=result_store, **report_kwargs)
+    )
     registry.register(ReportNeedTool())
     registry.register(ReportContextTool())
     registry.register(ReportContractTool())

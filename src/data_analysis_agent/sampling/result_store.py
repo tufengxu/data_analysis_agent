@@ -154,6 +154,20 @@ class ResultStore:
         self._evict()
         return result_id in self._index
 
+    def contains(self, result_id: str) -> bool:
+        """Read-only existence check — True iff the id is indexed and not expired.
+
+        Unlike ``get``, this does NOT evict an expired entry (no side effects), so
+        it is safe to call from read-only evidence-resolution paths.
+        """
+        if not self._available:
+            return False
+        rec = self._index.get(result_id)
+        if rec is None:
+            return False
+        age = self._clock() - float(rec.get("created_at", 0))
+        return age <= self.ttl_seconds
+
     def get(
         self,
         result_id: str,
