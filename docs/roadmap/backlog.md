@@ -79,7 +79,7 @@
 - [x] kernel stdout 捕获期上限 — ⏸ 已基本封顶（kernel_main 有 `_MAX_FIELD_CHARS=2M`/`_MAX_RESPONSE_BYTES=8M`/stdout clip 500k；残留仅短命子进程内 StringIO 执行期膨胀，价值低，不做）
 - [ ] recovery-policy 扩面（streaming 重试已部分缓解）
 - [ ] rephrase 启发式升级（CJK/否定变体；现人审门+泄露守卫兜底）— **待做 Slice 3**
-- [ ] overlay 域化（templates 已接 report_contract；overlays 需 contract 加 domain 字段）— **待做 Slice 2**
+- [x] overlay 域化（templates 已接 report_contract；overlays 需 contract 加 domain 字段）— ✅ PR #18（feat/overlay-domain）。ReportContract 加 `domain` 字段（additive）；report_contract 工具接 `domain` 输入（大小写归一）→ `apply_overlay` 把域特化 required_caveats（saas→mrr_churn 等）叠到模板，**apply_overlay 从死代码变活路径**。未知域 no-op；AD_HOC(None 模板)不崩。一轮独立审查收敛 0/0。
 - [x] ResultStore TTL 用 monotonic() 非墙上钟 — ⏸ 不做：`created_at` 持久化到 index.jsonl，`time.monotonic()` 契约不保证跨进程重启可比，naive 换会破坏跨重启 TTL；当前 wall-clock 对持久化时间戳正确（时钟跳对本地单用户 CLI 可忽略）
 
 ## CI / 基础设施待办
