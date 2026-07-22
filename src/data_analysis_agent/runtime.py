@@ -54,6 +54,7 @@ from .tools import (
     FileReadTool,
     HtmlReportTool,
     JoinPlannerTool,
+    MetricContractTool,
     NlQueryTool,
     PythonAnalysisTool,
     ReportContextTool,
@@ -76,6 +77,7 @@ READ_ONLY_TOOLS = (
     "report_need",
     "report_context",
     "report_contract",
+    "metric_contract",
     "causal_contract",
     "causal_qa",
     "experiment_readout",
@@ -125,6 +127,7 @@ def build_registry(
     registry.register(ReportNeedTool())
     registry.register(ReportContextTool())
     registry.register(ReportContractTool())
+    registry.register(MetricContractTool())
     registry.register(CausalContractTool())
     registry.register(CausalQATool())
     registry.register(ExperimentReadoutTool())
