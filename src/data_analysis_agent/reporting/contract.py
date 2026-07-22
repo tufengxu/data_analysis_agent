@@ -129,6 +129,7 @@ class ReportContract(Serializable):
     metrics: tuple[MetricSpec, ...] = ()
     dimensions: tuple[str, ...] = ()
     business_grain: str | None = None
+    domain: str | None = None
     explicit_requirement_refs: tuple[str, ...] = ()
     implicit_requirement_refs: tuple[str, ...] = ()
     data_context_refs: tuple[str, ...] = ()
