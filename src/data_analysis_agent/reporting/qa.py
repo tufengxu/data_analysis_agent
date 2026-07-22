@@ -18,7 +18,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from data_analysis_agent.reporting.chart_rules import MIN_SCATTER_POINTS, MIN_TREND_POINTS
 from data_analysis_agent.reporting.contract import (
@@ -221,6 +221,36 @@ def _check_evidence_refs_nonempty(document: ReportDocument) -> list[QAFinding]:
                     "移除空 evidence_refs 或填入真实来源 id",
                 )
             )
+    return out
+
+
+def _check_evidence_refs_resolve(
+    document: ReportDocument,
+    resolver: Callable[[str], bool | None],
+) -> list[QAFinding]:
+    # §3.6 / audit P0-3: a ref that PURPORTS to be a real artifact/result (the
+    # resolver can check it) but does not resolve is fabricated traceability —
+    # the anti-entropy出口. The resolver returns True (resolved), False (fabricated),
+    # or None (descriptive free text — cannot verify, do not penalize).
+    out: list[QAFinding] = []
+    for b in document.blocks:
+        for ref in b.evidence_refs:
+            if not isinstance(ref, str) or not ref.strip():
+                continue  # _check_evidence_refs_nonempty handles empties
+            try:
+                status = resolver(ref)
+            except Exception:
+                status = None  # a resolver hiccup must never block the report
+            if status is False:
+                out.append(
+                    QAFinding(
+                        Severity.HIGH,
+                        "evidence.unresolved",
+                        f"证据引用无法解析到真实产物/result_id: {ref}",
+                        b.block_id,
+                        "填入真实 artifact 文件名或 result_id，或移除该 ref",
+                    )
+                )
     return out
 
 
@@ -532,6 +562,7 @@ def run_qa(
     artifact_exists: bool = False,
     n_points_by_chart: Mapping[str, int] | None = None,
     n_observations_by_chart: Mapping[str, int] | None = None,
+    evidence_resolver: Callable[[str], bool | None] | None = None,
 ) -> QAReport:
     """对 ReportDocument 跑确定性 QA,返回 readiness + findings(无 LLM)。"""
     contract = document.contract
@@ -542,6 +573,8 @@ def run_qa(
     findings.extend(_check_data_scope(document))
     findings.extend(_check_finding_evidence(document))
     findings.extend(_check_evidence_refs_nonempty(document))
+    if evidence_resolver is not None:
+        findings.extend(_check_evidence_refs_resolve(document, evidence_resolver))
     findings.extend(_check_chart_blocks(document))
     findings.extend(_check_section_mapping(document))
     findings.extend(_check_metric_definitions(contract))
