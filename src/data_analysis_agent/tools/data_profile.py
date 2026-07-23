@@ -33,6 +33,10 @@ from .base import CanUseToolFn, Tool, ToolResult, ValidationResult
 _SAMPLE_ROWS = 1000
 _MAX_DIR_FILES = 50
 _MAX_PREVIEW_COLS = 12
+# Rows scanned (header=None) to detect a shifted Excel header (title/blank rows
+# above the real header). 8 covers the common "report title + blank + sub-title
+# + blank + header" layout without reading much extra.
+_HEADER_SCAN_ROWS = 8
 
 _DELIMITERS = {".csv": ",", ".tsv": "\t"}
 _EXCEL_SUFFIXES = {".xlsx", ".xls", ".xlsm"}
@@ -49,7 +53,11 @@ def _format_for(suffix: str) -> str:
 
 
 def _table(
-    sheet: str | None, columns: list[dict[str, str]], n_rows: int, sampled: bool
+    sheet: str | None,
+    columns: list[dict[str, str]],
+    n_rows: int,
+    sampled: bool,
+    header_offset: int = 0,
 ) -> dict[str, Any]:
     return {
         "sheet": sheet,
@@ -57,7 +65,26 @@ def _table(
         "columns": columns,
         "n_rows_sampled": n_rows,
         "sampled": sampled,
+        "header_offset": header_offset,
     }
+
+
+def _count_nonnull(row: Any) -> int:
+    """Non-null cells in a header=None row (a pandas Series)."""
+    return int(row.notna().sum())
+
+
+def _row_is_all_string(row: Any) -> bool:
+    """True if every non-null cell in the row is a string (header-name-like).
+
+    A real header row is all column-name strings; a data row carrying any
+    numeric/temporal value is not. Used to reject data rows that a blank-row
+    layout signal alone might otherwise promote to the header.
+    """
+    non_null = row.dropna()
+    if int(len(non_null)) == 0:
+        return False
+    return all(isinstance(v, str) for v in non_null.tolist())
 
 
 def _read_delimited_stdlib(path: Path, sep: str) -> tuple[list[str], int, bool]:
@@ -122,16 +149,68 @@ def _profile_parquet(path: Path) -> dict[str, Any]:
         return _table(None, columns, int(len(df)), False)
 
 
+def _detect_header_offset(raw_grid: Any) -> int:
+    """Detect the real header row index when title/blank rows sit above it.
+
+    ``raw_grid`` is a DataFrame read with ``header=None``. Three gates (ALL must
+    pass) keep this zero-false-positive on realistic clean sheets:
+
+    1. Density: a lower row is denser than row 0 by ≥2 cells (``best >= row0+2``)
+       — so a clean header with one empty cell, or ragged data, does not fire.
+    2. A fully-BLANK row sits above the candidate (in ``range(0, cand)``). A
+       blank row is an unambiguous layout artifact (title / spacer rows above the
+       real header); clean data tables never contain a fully-blank row.
+    3. The candidate row is all-string (column names). A data row carrying any
+       numeric/temporal value is rejected even when a blank spacer row sits above
+       it.
+
+    Returns 0 (no shift) whenever any gate fails — conservative by design: a
+    title directly on the header (no blank row) is missed, and an irreducibly
+    ambiguous degenerate case (a header with ≥2 unnamed cells + a blank spacer
+    row + all-text data) may still fire — not a realistic clean sheet.
+    """
+    n_rows = int(len(raw_grid))
+    if n_rows == 0:
+        return 0
+    n_scan = min(n_rows, _HEADER_SCAN_ROWS)
+    counts = [_count_nonnull(raw_grid.iloc[i]) for i in range(n_scan)]
+    row0 = counts[0]
+    best = max(counts)
+    if best >= row0 + 2:
+        cand = counts.index(best)
+        # Require (a) a fully-blank row above the candidate (layout artifact —
+        # clean data tables have none) AND (b) the candidate row is all-string
+        # (header names, not data values). Together these make a data row with a
+        # numeric value — even when a blank spacer row sits above it — rejected.
+        if any(counts[i] == 0 for i in range(0, cand)) and _row_is_all_string(raw_grid.iloc[cand]):
+            return cand
+    return 0
+
+
 def _profile_excel(path: Path) -> list[dict[str, Any]]:
     import pandas as pd
 
     workbook = pd.ExcelFile(path)
     tables: list[dict[str, Any]] = []
     for sheet in workbook.sheet_names:
-        frame = workbook.parse(sheet, nrows=_SAMPLE_ROWS + 1)
+        # First pass: detect a shifted header (title/blank rows above the real one).
+        offset = 0
+        try:
+            raw = workbook.parse(sheet, header=None, nrows=_HEADER_SCAN_ROWS)
+            offset = _detect_header_offset(raw)
+        except Exception:  # pragma: no cover - defensive; fall back to header=0
+            offset = 0
+        # Second pass: parse with the detected header so columns/rows are real.
+        try:
+            frame = workbook.parse(sheet, header=offset, nrows=_SAMPLE_ROWS + 1)
+        except Exception:
+            frame = workbook.parse(sheet, nrows=_SAMPLE_ROWS + 1)
+            offset = 0
         columns = [{"name": str(c), "dtype": str(frame[c].dtype)} for c in frame.columns]
         total = int(len(frame))
-        tables.append(_table(str(sheet), columns, min(total, _SAMPLE_ROWS), total > _SAMPLE_ROWS))
+        tables.append(
+            _table(str(sheet), columns, min(total, _SAMPLE_ROWS), total > _SAMPLE_ROWS, offset)
+        )
     return tables
 
 
@@ -197,6 +276,13 @@ def _render_file(profile: dict[str, Any]) -> str:
             f'sheet "{table["sheet"]}": ' if is_excel else ""
         ) + f"{table['n_rows_sampled']} rows{sampled} x {table['n_cols']} cols"
         lines.append(head)
+        if is_excel and table.get("header_offset"):
+            lines.append(
+                f"    ⚠ real header at row {table['header_offset']} "
+                f"(title/blank rows above) — re-read with "
+                f"pd.read_excel(..., header={table['header_offset']}) "
+                f"or skiprows={table['header_offset']}"
+            )
         for col in table["columns"]:
             lines.append(f"  - {col['name']} ({col['dtype']})")
     return "\n".join(lines)
