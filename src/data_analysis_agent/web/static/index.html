@@ -88,6 +88,49 @@
         border-radius: 4px;
         margin-top: 8px;
       }
+      .fb-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .fb-btn {
+        min-width: 96px;
+        font-weight: 600;
+      }
+      .fb-btn.active {
+        outline: 2px solid #1c2b39;
+        outline-offset: 1px;
+      }
+      .fb-good {
+        background: #1e8449;
+      }
+      .fb-good:hover {
+        background: #186a3b;
+      }
+      .fb-bad {
+        background: #c0392b;
+      }
+      .fb-bad:hover {
+        background: #a02c22;
+      }
+      .fb-rephrase {
+        background: #b9770e;
+      }
+      .fb-rephrase:hover {
+        background: #9a620b;
+      }
+      .fb-status {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .fb-ok {
+        color: #1e8449;
+      }
+      .fb-err {
+        color: #c0392b;
+      }
     </style>
   </head>
   <body>
@@ -155,6 +198,46 @@
       <iframe id="art-frame" sandbox="allow-scripts"></iframe>
     </div>
 
+    <div class="panel">
+      <h2>7. 反馈(feedback)</h2>
+      <div class="fb-row">
+        <button
+          type="button"
+          class="fb-btn fb-good"
+          data-tag="good"
+          onclick="pickTag(this)"
+        >
+          👍 Good
+        </button>
+        <button
+          type="button"
+          class="fb-btn fb-bad"
+          data-tag="bad"
+          onclick="pickTag(this)"
+        >
+          👎 Bad
+        </button>
+        <button
+          type="button"
+          class="fb-btn fb-rephrase"
+          data-tag="needs_fix"
+          onclick="pickTag(this)"
+        >
+          ✏️ Rephrase
+        </button>
+      </div>
+      <input
+        type="text"
+        id="fb-comment"
+        placeholder="可选短评(如:GMV 口径未确认)"
+        style="margin-top: 8px"
+      />
+      <div class="fb-row">
+        <button type="button" onclick="submitFeedback()">提交反馈</button>
+        <span id="fb-status" class="fb-status"></span>
+      </div>
+    </div>
+
     <script>
       async function post(url, body) {
         const res = await fetch(url, {
@@ -202,6 +285,7 @@
         });
         const el = document.getElementById("qa-output");
         el.textContent = "";
+        lastReadiness = r.readiness;
         const badgeEl = document.createElement("span");
         badgeEl.className = "readiness r-" + r.readiness;
         badgeEl.textContent = r.readiness;
@@ -233,6 +317,54 @@
         const name = document.getElementById("art-input").value;
         document.getElementById("art-frame").src =
           "/artifacts/" + encodeURIComponent(name);
+      }
+
+      // ---- 反馈(P1-3.8):Good/Bad/Rephrase + 可选短评 → /api/feedback ----
+      let fbTag = null;
+      let lastReadiness = null;
+
+      function pickTag(btn) {
+        fbTag = btn.dataset.tag;
+        document
+          .querySelectorAll(".fb-btn")
+          .forEach((b) => b.classList.toggle("active", b === btn));
+        setFbStatus("", "");
+      }
+
+      function setFbStatus(text, cls) {
+        const el = document.getElementById("fb-status");
+        el.textContent = text;
+        el.className = "fb-status " + cls;
+      }
+
+      async function submitFeedback() {
+        if (!fbTag) {
+          setFbStatus("请先选 Good / Bad / Rephrase", "fb-err");
+          return;
+        }
+        const body = {
+          tags: [fbTag],
+          comment: document.getElementById("fb-comment").value.trim(),
+          readiness: lastReadiness || "",
+        };
+        try {
+          const res = await fetch("/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const r = await res.json();
+          if (!res.ok) throw new Error(r.detail || res.statusText);
+          if (!r.stored) throw new Error("backend did not confirm store");
+          setFbStatus("已记录 ✓", "fb-ok");
+          document.getElementById("fb-comment").value = "";
+          fbTag = null;
+          document
+            .querySelectorAll(".fb-btn")
+            .forEach((b) => b.classList.remove("active"));
+        } catch (e) {
+          setFbStatus("提交失败: " + (e.message || e), "fb-err");
+        }
       }
     </script>
   </body>
