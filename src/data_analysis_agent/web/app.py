@@ -102,8 +102,9 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
     app.state.artifact_dir = artifacts
 
     @app.get("/", response_class=HTMLResponse)
-    def index() -> str:
-        return (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    def index() -> HTMLResponse:
+        # redirect_slashes (default) 301s /workbench → /workbench/ so this serves the UI.
+        return HTMLResponse((_STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
     @app.post("/api/report/need")
     def report_need(req: NeedRequest) -> dict[str, Any]:
