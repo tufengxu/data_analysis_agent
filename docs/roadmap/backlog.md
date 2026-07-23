@@ -18,24 +18,24 @@
 
 ## Wave 1 范围明细
 
-### P1-2 本地项目工作区（整体未开始）
+### P1-2 本地项目工作区（✅ PR #8 完成）
 
-- [ ] `~/.daa/projects/<project_id>/` 布局（uploads/artifacts/sessions/results/trajectories/memory/eval_tasks/logs/manifests）
-- [ ] `project.json` 项目清单（project_id/authorized_paths/artifact_dir/persist_path/各子目录/配置预设/model/retention）
-- [ ] per-run manifest（`runs/<run_id>.json`：请求/授权路径/session/tool calls/artifacts/feedback/memory writes/eval eligibility/终止原因/token/warnings）
-- [ ] workspace 路径接入 `AgentRuntime.from_config()`
-- [ ] CLI：`data-agent project init/status/list/open/history`（只读除非显式建项目）
+- [x] `~/.daa/projects/<project_id>/` 布局（sessions/artifacts/results/workspace/runs/uploads/logs；trajectories/memory/eval_tasks 暂留全局 `~/.daa` 根，见 workspace.py docstring）
+- [x] `project.json` 项目清单（project_id/authorized_paths/各子目录/model/preset；artifact_dir/persist_path 由 project 派生，retention 未单设）
+- [x] per-run manifest（`runs/<run_id>.json`：请求/授权路径/session/tool calls/artifacts/feedback/终止原因/token/warnings）
+- [x] workspace 路径接入 `AgentRuntime.from_config(project=...)`
+- [x] CLI：`data-agent project init/status/list/open/history`（只读除非显式 init）
 
-### P1-1 安全基线（除 read_file 白名单 + ADR0008 外未做）
+### P1-1 安全基线（✅ PR #9/#10 完成）
 
-- [ ] P1-1.2/1.3 `local_safe` / `local_dev` 权限预设（local_safe 为 Web 默认）
-- [ ] P1-1.6 sensitive-mode 开关（禁轨迹/记忆写入）→ **同时闭合审计 PII 脱敏**
-- [ ] P1-1.7 `data-agent doctor`（API key/data extras/DAA_HOME 可写/artifact 目录/ECharts 模式/权限预设/授权路径/kernel 健康/本地端口）
+- [x] P1-1.2/1.3 `local_safe` / `local_dev` 权限预设（local_safe 为 Web 默认）
+- [x] P1-1.6 sensitive-mode 开关（禁轨迹/记忆写入）— **捕获侧已闭合**（不捕获用户输入形）；计算产物净化是后续项（见下）
+- [x] P1-1.7 `data-agent doctor`（API key/data extras/DAA_HOME 可写/artifact 目录/ECharts 模式/权限预设/授权路径/kernel 健康/本地端口）
 
 ### 审计延后项（随 Wave 1 闭合）
 
-- [ ] ~/.daa 全目录磁盘上限 + retention（trajectories 已有 cap `7e12fb5`，扩到 memory/profiles/skills）
-- [ ] 轨迹 PII 脱敏（`user_input` 全文 + `final_text_digest` 原样落盘）
+- [ ] ~/.daa 全目录磁盘上限 + retention（trajectories 已有 cap `7e12fb5`，扩到 memory/profiles/skills）— **部分**：trajectory cap 已有；memory/profiles/skills 扩面未做
+- [ ] 轨迹 PII 脱敏（`user_input` 全文 + `final_text_digest` 原样落盘）— **部分**：sensitive-mode 是「不捕获」非「净化」；主动 scrubbing 未做
 - [ ] ⏸ 默认 fail-closed（P3-1）— 不推荐：python_analysis 是主工具，CLI 单用户每次 ASK 不可用
 
 ## Wave 1 Slice 1 已知跟进项（独立审查 minor，不阻塞）
@@ -78,6 +78,7 @@
 - [x] §3.6 完整 evidence artifact 解析（ArtifactStore/ResultStore 接到渲染边界）— ✅ PR #17（feat/evidence-resolution）。QA 加 `evidence_resolver` 注入式三态检查（resolved/fabricated/descriptive）；`ResultStore.contains` 只读存在性；html_report 注入 result_store + 构建 resolver，**限定 artifact_dir 子树**（杀文件存在性 oracle + 杜绝系统文件冒充证据，symlink 安全）。fabricated ref → HIGH（NEEDS_REVIEW 徽章，不拒渲染，与 evidence.empty_ref 一致）。两轮独立审查收敛 0/0（r1 抓 spec↔impl 矛盾 + 路径遍历；r2 实测 symlink fail-closed）。**不做数值校验**（独立 slice）。
 - [x] kernel stdout 捕获期上限 — ⏸ 已基本封顶（kernel_main 有 `_MAX_FIELD_CHARS=2M`/`_MAX_RESPONSE_BYTES=8M`/stdout clip 500k；残留仅短命子进程内 StringIO 执行期膨胀，价值低，不做）
 - [x] recovery-policy 扩面（streaming 重试已部分缓解）— ✅ PR #22（feat/recovery-transient）。recovery 对 transient API 错误（429/超时/overloaded/连接，is_recoverable 且非 prompt-too-long）做**有界 loop 层指数退避重试**（TRANSIENT_RETRY，最多 3 次，backoff 1/2/4s cap 10），耗尽→MODEL_ERROR。prompt-too-long 走原 compact ladder（行为不变）。`transient_recovery_count` 每次 successful model call 复位（per-streak）。sleep 可注入（测试 no-op）。一轮独立审查收敛 0/0（3 minor：count 复位已修、分流子串理论风险记录、reset 是 loop 胶水未单独 e2e）。
+- [x] 审计 P0-3 数值校验（anti-entropy 出口，图表数值来源标注分支）— ✅ PR #23（feat/numeric-validation）。evidence_refs 半已在 #17 闭合；本项闭合**数值半**。chart_render 产出 option 顶层注入 `_source={tool,family,block_id}`（ECharts 忽略未知顶层键，渲染零影响）；`run_qa` 加注入式 `chart_options` 能力（纯函数）+ `_check_chart_provenance`：`chart.no_source`（无 `_source` → 数值无来源轨迹）+ `chart.shape_mismatch`（bar/line 系列长度≠category 轴类别数），两道均 HIGH 不阻断、`chart_options` 缺省整项 skip。长度比对门控在 `type∈{bar,line}` → heatmap 三元组/scatter value 轴零误报。**值级「图表数==kernel 数」不做**（result_store 按 tool_use_id 缓存 + python_exec 自由文本 stdout，无可靠 join key，避免启发式过度承诺）。两轮独立审查收敛 SHIP（r1 抓 heatmap 误报已修+全图族 round-trip 回归）。跟进（NIT）：手写 option 省略 `xAxis.type` 时 shape 检查跳过（安全方向 conservatism）；`_source` 可伪造/旧产物误标（advisory，已记 doc caveat）。
 - [x] rephrase 启发式升级（CJK/否定变体；现人审门+泄露守卫兜底）— ✅ PR #19（feat/rephrase-upgrade）。CJK 子串 marker 收紧到无歧义纠正词（否定/错误/重做 + 改一/再改/换个），删歧义 opener（等等/应该是/其实是/反过来/再算）；英文改词边界 regex（修裸 no⊂note、again⊂against 误报）。一轮独立审查收敛后修了 `等等` MAJOR（多义假阳）。
 - [x] overlay 域化（templates 已接 report_contract；overlays 需 contract 加 domain 字段）— ✅ PR #18（feat/overlay-domain）。ReportContract 加 `domain` 字段（additive）；report_contract 工具接 `domain` 输入（大小写归一）→ `apply_overlay` 把域特化 required_caveats（saas→mrr_churn 等）叠到模板，**apply_overlay 从死代码变活路径**。未知域 no-op；AD_HOC(None 模板)不崩。一轮独立审查收敛 0/0。
 - [x] ResultStore TTL 用 monotonic() 非墙上钟 — ⏸ 不做：`created_at` 持久化到 index.jsonl，`time.monotonic()` 契约不保证跨进程重启可比，naive 换会破坏跨重启 TTL；当前 wall-clock 对持久化时间戳正确（时钟跳对本地单用户 CLI 可忽略）
