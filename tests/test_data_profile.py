@@ -261,3 +261,148 @@ async def test_truncated_directory_header_shows_true_total(tmp_path, monkeypatch
     assert len(prof["files"]) == 2
     assert "3" in result.content
     assert "truncated" in result.content.lower()
+
+
+# --- Excel header-health (P1-4.7) ------------------------------------------
+
+
+def _write_messy_sheet(xlsx_path, *, title="2024 销售月报"):
+    """A sheet with a title row + blank row + real header + data (header NOT at row 0)."""
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "messy"
+    ws.append([title, None, None])  # row 0: report title
+    ws.append([None, None, None])  # row 1: blank
+    ws.append(["date", "amount", "account"])  # row 2: real header
+    ws.append(["2024-01-01", 10, "A"])
+    ws.append(["2024-01-02", 20, "B"])
+    wb.save(xlsx_path)
+
+
+async def test_excel_detects_shifted_header(tmp_path):
+    pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+    xlsx = tmp_path / "messy.xlsx"
+    _write_messy_sheet(xlsx)
+    tool = DataProfileTool(allowed_paths=[tmp_path])
+
+    result = await tool.call({"path": str(xlsx)})
+
+    assert not result.is_error
+    table = result.metadata["profile"]["tables"][0]
+    assert table["header_offset"] == 2
+    # profiled columns are the REAL header (not the title / Unnamed)
+    col_names = [c["name"] for c in table["columns"]]
+    assert col_names == ["date", "amount", "account"]
+    # the warning tells the model how to re-read
+    assert "header=2" in result.content
+    assert "real header" in result.content
+
+
+async def test_excel_clean_sheet_header_offset_zero(tmp_path):
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+    xlsx = tmp_path / "clean.xlsx"
+    with pd.ExcelWriter(xlsx) as writer:
+        pd.DataFrame({"date": ["2024-01-01"], "amount": [10]}).to_excel(
+            writer, sheet_name="s1", index=False
+        )
+    tool = DataProfileTool(allowed_paths=[tmp_path])
+
+    result = await tool.call({"path": str(xlsx)})
+
+    table = result.metadata["profile"]["tables"][0]
+    assert table["header_offset"] == 0
+    assert "real header" not in result.content  # no false alarm on a clean sheet
+
+
+async def test_excel_mixed_clean_and_messy_sheets(tmp_path):
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+    xlsx = tmp_path / "mixed.xlsx"
+    # sheet 1: clean
+    with pd.ExcelWriter(xlsx) as writer:
+        pd.DataFrame({"a": [1, 2]}).to_excel(writer, sheet_name="clean", index=False)
+    # append a messy sheet via openpyxl
+    import openpyxl
+
+    wb = openpyxl.load_workbook(xlsx)
+    ws = wb.create_sheet("messy")
+    ws.append(["TITLE", None, None])
+    ws.append([None, None, None])
+    ws.append(["x", "y", "z"])
+    ws.append([1, 2, 3])
+    wb.save(xlsx)
+    tool = DataProfileTool(allowed_paths=[tmp_path])
+
+    result = await tool.call({"path": str(xlsx)})
+
+    tables = {t["sheet"]: t for t in result.metadata["profile"]["tables"]}
+    assert tables["clean"]["header_offset"] == 0
+    assert tables["messy"]["header_offset"] == 2
+    assert [c["name"] for c in tables["messy"]["columns"]] == ["x", "y", "z"]
+
+
+def test_detect_header_offset_picks_densest_row_below_row0():
+    pd = pytest.importorskip("pandas")
+    # row0 title (1 non-null), row1 blank (0), row2 header (3) → offset 2
+    grid = pd.DataFrame([[1.0, None, None], [None, None, None], ["a", "b", "c"]])
+    assert dp._detect_header_offset(grid) == 2
+
+
+def test_detect_header_offset_zero_when_row0_is_densest():
+    pd = pytest.importorskip("pandas")
+    grid = pd.DataFrame([["a", "b", "c"], [1, 2, 3]])  # clean: row0 is the header
+    assert dp._detect_header_offset(grid) == 0
+
+
+def test_detect_header_offset_zero_when_header_has_empty_cell():
+    # clean header with a blank cell (2 non-null) + denser data row (3) must NOT
+    # be flagged as shifted — this is the B1 false-positive vector.
+    pd = pytest.importorskip("pandas")
+    grid = pd.DataFrame([["name", None, "score"], ["alice", 30, 90]])
+    assert dp._detect_header_offset(grid) == 0
+
+
+def test_detect_header_offset_zero_when_data_is_ragged():
+    # clean 2-col header + wider data row must NOT be flagged (margin < 2).
+    pd = pytest.importorskip("pandas")
+    grid = pd.DataFrame([["a", "b", None], [1, 2, 3]])
+    assert dp._detect_header_offset(grid) == 0
+
+
+def test_detect_header_offset_zero_when_header_has_two_empty_cells():
+    # clean sparse header [name,None,None] (1 non-null) over dense numeric data
+    # [alice,30,90] (3) — margin is 2 BUT the dense row is DATA (has ints), not a
+    # header. The dtype guard must reject it (M1 vector).
+    pd = pytest.importorskip("pandas")
+    grid = pd.DataFrame([["name", None, None], ["alice", 30, 90], ["bob", 25, 85]])
+    assert dp._detect_header_offset(grid) == 0
+
+
+def test_detect_header_offset_zero_all_categorical_sparse_header():
+    # all-categorical data over a sparse header, no blank row → no layout signal
+    # → offset 0 (blank-row gate does not fire).
+    pd = pytest.importorskip("pandas")
+    grid = pd.DataFrame([["name", None, None], ["alice", "east", "A"], ["bob", "west", "B"]])
+    assert dp._detect_header_offset(grid) == 0
+
+
+def test_detect_header_offset_zero_clean_sparse_header_with_blank_spacer():
+    # clean table: sparse header + a blank spacer row + dense numeric data.
+    # The blank row is a real layout artifact, but the dense row is DATA (has
+    # ints), not a header — the candidate all-string guard must reject it.
+    pd = pytest.importorskip("pandas")
+    grid = pd.DataFrame(
+        [["name", None, None], [None, None, None], ["alice", 30, 90], ["bob", 25, 85]]
+    )
+    assert dp._detect_header_offset(grid) == 0
+
+
+def test_detect_header_offset_fires_for_clear_shift():
+    # sparse title (1) + blank (0) + dense header (3): margin >= 2 → offset 2
+    pd = pytest.importorskip("pandas")
+    grid = pd.DataFrame([["TITLE", None, None], [None, None, None], ["a", "b", "c"]])
+    assert dp._detect_header_offset(grid) == 2

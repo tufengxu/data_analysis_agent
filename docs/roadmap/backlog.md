@@ -71,7 +71,7 @@
       reporting 链 additive 安全经探针验证）。**P1-4 工具硬化三部曲完成**（data_quality → join_planner → metric_contract）。
       跟进（minor）：live memory store 注入 tool（当前输入传入）；fuzzy 文本冲突判定；exclusions 进 html_report caveat。
 - [x] P1-4.6 nl_query schema-aware 升级 — ✅ PR #20（feat/nl-query-schema-aware）。① schema-aware：可选 `schema`（data_profile 列表）→ 生成代码用真实列名（按 query 关键词匹配数值列，categorical deny-list dtype 分类含 double/real/numeric）；无 schema 保持旧行为。② secret 防护：SQL 连接串含 `@` → 生成代码改用 `$DB_URL`、display 脱敏、warning；detection 用原始 `@`（不依赖 urlparse 的脆弱 netloc 解析，免疫密码含 `#`/`?`/`/`/`@`/scheme 含 `_`/畸形 URL），redact fail-closed（urlparse 干净提取才重建 scheme+host:port，否则占位）。**四轮独立审查收敛**（每轮挖出 secret 泄露路径并修：regex→urlparse→raw-`@`+fail-closed；400 fuzz 0 泄露）。20 测试。
-- [ ] P1-4.7 Excel 多表工作流（部分）
+- [x] P1-4.7 Excel 多表工作流（部分）— ✅ PR #21（feat/excel-header-health）。data_profile 的 Excel 路径加 header-health：检测「隐藏的标题/空行」（真表头不在 row 0）→ 按 offset 重解析真实列 + `header_offset` + 警告（含 header=/skiprows=）。三道保守 gate（density `>=row0+2` + 上方全空行 + 候选行全 string）经四轮独立审查逐轮收紧，干净表零假阳（仅剩不可约 degenerate 残留：≥2 无名列+空行+全文本数据，已记 spec）。multi-sheet discovery/sheet selection/cross-sheet joins 已由既有 data_profile/data_quality/join_planner 覆盖。28 测试。**P1-4 工具硬化全部完成**。剩余 follow-up：workbook summary、common date/amount/account 列检测。
 
 ### 审计小项（触及相关代码时顺手）
 
