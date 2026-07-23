@@ -2,77 +2,495 @@
 <html lang="zh">
   <head>
     <meta charset="utf-8" />
-    <title>DAA Workbench (MVP)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DAA Workbench</title>
+    <!-- marked:markdown 渲染(CDN,失败时降级为 pre-wrap 文本;localhost-only 不强制依赖)。SRI 锁定版本。 -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
+      integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi"
+      crossorigin="anonymous"
+      defer
+    ></script>
     <style>
+      * {
+        box-sizing: border-box;
+      }
       body {
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        margin: 1.5rem;
-        max-width: 960px;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "PingFang SC",
+          sans-serif;
+        margin: 0;
+        color: #1c2b39;
+        background: #f5f7fa;
+        line-height: 1.6;
       }
-      #q {
-        width: 70%;
-        padding: 0.4rem;
+      header {
+        background: #fff;
+        border-bottom: 1px solid #e1e6ec;
+        padding: 12px 20px;
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        position: sticky;
+        top: 0;
+        z-index: 5;
       }
-      #out {
-        background: #f6f6f6;
-        padding: 0.75rem;
+      header h1 {
+        font-size: 17px;
+        margin: 0;
+      }
+      header nav a {
+        color: #4a7bd0;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #e1e6ec;
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+      }
+      .panel h2 {
+        font-size: 14px;
+        margin: 0 0 10px;
+        color: #5a6b7b;
+        text-transform: none;
+        letter-spacing: 0.2px;
+      }
+      input[type="text"],
+      textarea {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #cfd8e0;
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+      textarea {
+        font-family: inherit;
+        resize: vertical;
+      }
+      button {
+        padding: 8px 18px;
+        background: #4a7bd0;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      button:hover {
+        background: #3a6bc0;
+      }
+      button:disabled {
+        background: #9db4d6;
+        cursor: not-allowed;
+      }
+      .run-bar {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .run-bar textarea {
+        flex: 1;
+      }
+      #status {
+        font-size: 12px;
+        color: #5a6b7b;
+        margin-top: 6px;
+        min-height: 1em;
+      }
+      /* markdown 回答 */
+      #answer {
+        min-height: 3rem;
+        font-size: 14px;
+      }
+      #answer.raw {
         white-space: pre-wrap;
-        border-radius: 4px;
-        min-height: 4rem;
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
       }
-      #tools li {
+      #answer h1,
+      #answer h2,
+      #answer h3 {
+        margin: 0.6em 0 0.3em;
+      }
+      #answer table {
+        border-collapse: collapse;
+        margin: 8px 0;
+      }
+      #answer th,
+      #answer td {
+        border: 1px solid #d0d7de;
+        padding: 4px 10px;
+        font-size: 13px;
+      }
+      #answer code {
+        background: #f0f3f6;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 12.5px;
+      }
+      #answer pre {
+        background: #f6f8fa;
+        padding: 10px;
+        border-radius: 6px;
+        overflow-x: auto;
+      }
+      /* 工具时间线 */
+      #tools {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .tool {
+        border: 1px solid #e1e6ec;
+        border-left: 3px solid #4a7bd0;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 12.5px;
+        background: #fbfcfd;
+      }
+      .tool.err {
+        border-left-color: #c0392b;
+        background: #fdf3f2;
+      }
+      .tool .t-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
         font-family: ui-monospace, monospace;
       }
-      .err {
-        color: #b00;
+      .tool .t-name {
+        font-weight: 700;
+      }
+      .tool .t-status {
+        color: #5a6b7b;
+      }
+      .tool .t-dur {
+        color: #8a97a3;
+      }
+      .tool details {
+        margin-top: 6px;
+      }
+      .tool summary {
+        cursor: pointer;
+        color: #4a7bd0;
+        font-size: 12px;
+      }
+      .tool pre {
+        background: #f0f3f6;
+        padding: 6px 8px;
+        border-radius: 4px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        margin: 4px 0 0;
+      }
+      .tool .t-art a {
+        color: #1e8449;
+      }
+      /* 终止态 + 用量 */
+      .meta-row {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        font-size: 12.5px;
+        color: #5a6b7b;
+      }
+      .meta-row b {
+        color: #1c2b39;
+      }
+      #files li {
+        font-family: ui-monospace, monospace;
+        font-size: 12.5px;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 12px;
+        background: #e8f0fb;
+        color: #2f5aa0;
+      }
+      .muted {
+        color: #8a97a3;
       }
     </style>
   </head>
   <body>
-    <h2>Data Analysis Agent — Web Workbench (MVP)</h2>
-    <p>
-      <a href="/workbench/"
-        >→ 报告塑造 workbench(QA / 模板 / artifact / 反馈)</a
-      >
-    </p>
-    <p>
-      <input
-        id="paths"
-        placeholder="授权数据路径(绝对路径,逗号分隔)"
-        style="width: 70%; padding: 0.3rem"
-      />
-    </p>
-    <p>
-      <input
-        id="q"
-        placeholder="自然语言分析请求"
-        style="width: 70%; padding: 0.4rem"
-      />
-      <button onclick="run()">运行</button>
-    </p>
-    <h3>工具调用</h3>
-    <ul id="tools"></ul>
-    <h3>回答</h3>
-    <pre id="out"></pre>
+    <header>
+      <h1>Data Analysis Agent</h1>
+      <nav>
+        <a href="/workbench/"
+          >→ 报告塑造 workbench(QA / 模板 / artifact / 反馈)</a
+        >
+      </nav>
+    </header>
+    <main>
+      <div class="panel">
+        <h2>数据源(授权路径,绝对路径,逗号分隔)</h2>
+        <input
+          type="text"
+          id="paths"
+          placeholder="/data/sales.csv, /data/dim_sku.xlsx"
+        />
+      </div>
+
+      <div class="panel">
+        <h2>提问</h2>
+        <div class="run-bar">
+          <textarea
+            id="q"
+            rows="2"
+            placeholder="自然语言分析请求,如:上周销售额环比如何?"
+          ></textarea>
+          <button id="run-btn" onclick="run()">运行</button>
+        </div>
+        <div id="status"></div>
+      </div>
+
+      <div class="panel">
+        <h2>回答</h2>
+        <div id="answer" class="raw"></div>
+      </div>
+
+      <div class="panel">
+        <h2>工具时间线</h2>
+        <div id="tools"></div>
+      </div>
+
+      <div class="panel" id="terminal-panel" style="display: none">
+        <h2>终止态</h2>
+        <div class="meta-row">
+          <span>terminal_reason: <b id="term-reason">—</b></span>
+          <span>输入 tokens: <b id="tok-in">0</b></span>
+          <span>输出 tokens: <b id="tok-out">0</b></span>
+        </div>
+        <h2 style="margin-top: 12px">生成文件</h2>
+        <ul id="files"></ul>
+      </div>
+    </main>
 
     <script>
+      const toolsEl = document.getElementById("tools");
+      const answerEl = document.getElementById("answer");
+      const statusEl = document.getElementById("status");
+      const toolMap = new Map(); // tool_use_id -> {el, start}
+      let tokIn = 0;
+      let tokOut = 0;
+      let artifacts = [];
+      let answerText = "";
+
+      function setStatus(t) {
+        statusEl.textContent = t;
+      }
+
+      function renderAnswer(final) {
+        // marked 可用则渲染 markdown,否则保留 pre-wrap 原文(CDN 失败时降级)。
+        if (window.marked && window.marked.parse) {
+          answerEl.classList.remove("raw");
+          answerEl.innerHTML = window.marked.parse(answerText);
+        } else {
+          answerEl.classList.add("raw");
+          answerEl.textContent = answerText;
+        }
+        if (final)
+          answerEl.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
+
+      function addToolUse(ev) {
+        const card = document.createElement("div");
+        card.className = "tool";
+        card.innerHTML =
+          '<div class="t-head"><span class="t-name">🔧 ' +
+          escapeHtml(ev.tool_name) +
+          '</span><span class="t-status">运行中…</span><span class="t-dur"></span></div>';
+        if (ev.parameters && Object.keys(ev.parameters).length) {
+          const d = document.createElement("details");
+          d.innerHTML =
+            "<summary>params</summary><pre>" +
+            escapeHtml(JSON.stringify(ev.parameters, null, 2)) +
+            "</pre>";
+          card.appendChild(d);
+        }
+        toolsEl.appendChild(card);
+        toolMap.set(ev.tool_use_id, { el: card, start: performance.now() });
+      }
+
+      function addToolResult(ev) {
+        const rec = toolMap.get(ev.tool_use_id);
+        const dur = rec
+          ? ((performance.now() - rec.start) / 1000).toFixed(1) + "s"
+          : "";
+        const card = rec ? rec.el : document.createElement("div");
+        if (!rec) {
+          card.className = "tool";
+          card.innerHTML =
+            '<div class="t-head"><span class="t-name">🔧 ' +
+            escapeHtml(ev.tool_name) +
+            '</span><span class="t-status"></span><span class="t-dur"></span></div>';
+          toolsEl.appendChild(card);
+        }
+        card.querySelector(".t-status").textContent = ev.is_error
+          ? "错误"
+          : "完成";
+        card.querySelector(".t-dur").textContent = dur;
+        if (ev.is_error) card.classList.add("err");
+        // 结果摘要(截断)
+        if (ev.content) {
+          const d = document.createElement("details");
+          const text =
+            typeof ev.content === "string"
+              ? ev.content
+              : JSON.stringify(ev.content, null, 2);
+          d.innerHTML =
+            "<summary>结果</summary><pre>" +
+            escapeHtml(truncate(text, 2000)) +
+            "</pre>";
+          card.appendChild(d);
+        }
+        // 产物链接
+        if (ev.artifacts && ev.artifacts.length) {
+          for (const a of ev.artifacts) {
+            artifacts.push(a);
+            const div = document.createElement("div");
+            div.className = "t-art";
+            const name = typeof a === "string" ? a : a.name || a.path || a;
+            const isHtml = String(name).endsWith(".html");
+            div.innerHTML = isHtml
+              ? '📄 <a href="/workbench/artifacts/' +
+                encodeURIComponent(name) +
+                '" target="_blank" rel="noopener">' +
+                escapeHtml(name) +
+                "</a>"
+              : "📄 " + escapeHtml(name);
+            card.appendChild(div);
+          }
+        }
+      }
+
+      function addStateChange(ev) {
+        if (ev.new_state === "AWAITING_CONFIRMATION") {
+          setStatus("⏸ 等待审批:" + (ev.reason || ""));
+        } else {
+          setStatus("状态:" + ev.previous_state + " → " + ev.new_state);
+        }
+      }
+
+      function onUsage(ev) {
+        tokIn += ev.input_tokens || 0;
+        tokOut += ev.output_tokens || 0;
+      }
+
+      function onComplete(ev) {
+        setStatus("");
+        document.getElementById("terminal-panel").style.display = "";
+        document.getElementById("term-reason").textContent =
+          ev.terminal_reason || "—";
+        document.getElementById("tok-in").textContent = tokIn;
+        document.getElementById("tok-out").textContent = tokOut;
+        if (ev.final_text) {
+          answerText = ev.final_text;
+          renderAnswer(true);
+        }
+        const files = document.getElementById("files");
+        files.innerHTML = "";
+        if (!artifacts.length) {
+          files.innerHTML = '<li class="muted">(无)</li>';
+        } else {
+          for (const a of new Set(artifacts)) {
+            const name = typeof a === "string" ? a : a.name || a.path || a;
+            const li = document.createElement("li");
+            li.textContent = name;
+            files.appendChild(li);
+          }
+        }
+        document.getElementById("run-btn").disabled = false;
+      }
+
+      function onError(ev) {
+        setStatus("错误:" + (ev.error || "unknown"));
+        statusEl.style.color = "#c0392b";
+        document.getElementById("run-btn").disabled = false;
+      }
+
+      function handle(ev) {
+        switch (ev.type) {
+          case "request_start":
+            setStatus("模型 " + ev.model_id + " · turn " + ev.turn_count);
+            break;
+          case "stream_text":
+            answerText += ev.text;
+            renderAnswer(false);
+            break;
+          case "tool_use":
+            addToolUse(ev);
+            break;
+          case "tool_result":
+            addToolResult(ev);
+            break;
+          case "state_change":
+            addStateChange(ev);
+            break;
+          case "usage":
+            onUsage(ev);
+            break;
+          case "complete":
+            onComplete(ev);
+            break;
+          case "error":
+            onError(ev);
+            break;
+          default:
+            // system / 未知事件:不丢,仅控制台记录(契约兜底桶)。
+            console.debug("event", ev);
+        }
+      }
+
       async function run() {
-        const q = document.getElementById("q").value;
-        const rawPaths = document.getElementById("paths").value;
-        const paths = rawPaths
-          .split(",")
+        const q = document.getElementById("q").value.trim();
+        const paths = document
+          .getElementById("paths")
+          .value.split(",")
           .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        const out = document.getElementById("out");
-        const tools = document.getElementById("tools");
-        out.textContent = "";
-        out.className = "";
-        tools.innerHTML = "";
+          .filter(Boolean);
+        if (!q) {
+          setStatus("请输入提问");
+          return;
+        }
+        // 重置
+        document.getElementById("run-btn").disabled = true;
+        statusEl.style.color = "";
+        toolsEl.innerHTML = "";
+        toolMap.clear();
+        answerText = "";
+        tokIn = tokOut = 0;
+        artifacts = [];
+        document.getElementById("terminal-panel").style.display = "none";
+        renderAnswer(false);
+        setStatus("连接中…");
+
         const resp = await fetch("/api/run/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: q, paths: paths }),
         });
+        if (!resp.ok || !resp.body) {
+          setStatus("请求失败:" + resp.status);
+          document.getElementById("run-btn").disabled = false;
+          return;
+        }
         const reader = resp.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
@@ -85,22 +503,32 @@
             const chunk = buf.slice(0, idx);
             buf = buf.slice(idx + 2);
             if (!chunk.startsWith("data: ")) continue;
-            handle(JSON.parse(chunk.slice(6)), out, tools);
+            try {
+              handle(JSON.parse(chunk.slice(6)));
+            } catch (e) {
+              console.error("bad frame", e, chunk);
+            }
           }
         }
+        // 流结束但未收到 complete(异常断开):解锁按钮
+        document.getElementById("run-btn").disabled = false;
       }
-      function handle(ev, out, tools) {
-        if (ev.type === "stream_text") out.textContent += ev.text;
-        else if (ev.type === "tool_use") {
-          const li = document.createElement("li");
-          li.textContent = "🔧 " + ev.tool_name;
-          tools.appendChild(li);
-        } else if (ev.type === "complete") {
-          out.textContent += "\n\n[完成: " + ev.terminal_reason + "]";
-        } else if (ev.type === "error") {
-          out.textContent += "\n[错误: " + ev.error + "]";
-          out.className = "err";
-        }
+
+      function escapeHtml(s) {
+        return String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      }
+      function truncate(s, n) {
+        return s.length > n ? s.slice(0, n) + "\n…(截断)" : s;
       }
     </script>
   </body>
