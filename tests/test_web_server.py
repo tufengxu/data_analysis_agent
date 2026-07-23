@@ -50,6 +50,19 @@ def _config() -> AgentConfig:
     )
 
 
+def _csrf_headers(client: TestClient) -> dict[str, str]:
+    """Pull the CSRF token out of the served index and echo it as the guard header.
+
+    The real UI does exactly this (token embedded in HTML → X-DAA-Token header).
+    Getting it from the served page (not a test-side constant) proves the server
+    actually injects a token and that a same-origin caller can obtain it.
+    """
+    html = client.get("/").text
+    marker = 'const CSRF = "'
+    token = html.split(marker, 1)[1].split('"', 1)[0]
+    return {"X-DAA-Token": token}
+
+
 def test_index_serves_html() -> None:
     from data_analysis_agent.server.app import create_app
 
@@ -67,7 +80,9 @@ def test_run_stream_400_when_no_api_key() -> None:
         api_key="", persistent_kernel=False, enable_telemetry=False, enable_memory=False
     )
     client = TestClient(create_app(config))
-    r = client.post("/api/run/stream", json={"query": "hi", "paths": ["/data/x"]})
+    r = client.post(
+        "/api/run/stream", json={"query": "hi", "paths": ["/data/x"]}, headers=_csrf_headers(client)
+    )
     assert r.status_code == 400
 
 
@@ -92,7 +107,11 @@ def test_run_stream_emits_sse_events_through_complete(
     monkeypatch.setattr(server_app.AgentRuntime, "from_config", fake_from_config)
 
     client = TestClient(server_app.create_app(_config()))
-    r = client.post("/api/run/stream", json={"query": "hi", "paths": ["/data/dummy.csv"]})
+    r = client.post(
+        "/api/run/stream",
+        json={"query": "hi", "paths": ["/data/dummy.csv"]},
+        headers=_csrf_headers(client),
+    )
 
     assert r.status_code == 200
     body = r.text
@@ -117,7 +136,9 @@ def test_run_stream_requires_authorized_paths(monkeypatch: pytest.MonkeyPatch) -
         lambda config, **kw: calls.append(kw) or _FakeRuntime([]),
     )
     client = TestClient(server_app.create_app(_config()))
-    r = client.post("/api/run/stream", json={"query": "hi", "paths": []})
+    r = client.post(
+        "/api/run/stream", json={"query": "hi", "paths": []}, headers=_csrf_headers(client)
+    )
     assert r.status_code == 200
     assert "no authorized data paths" in r.text
     assert 'data: {"type": "error"' in r.text
@@ -135,7 +156,9 @@ def test_run_stream_rejects_blank_path_entries(monkeypatch: pytest.MonkeyPatch) 
         lambda config, **kw: calls.append(kw) or _FakeRuntime([]),
     )
     client = TestClient(server_app.create_app(_config()))
-    r = client.post("/api/run/stream", json={"query": "hi", "paths": ["", "   "]})
+    r = client.post(
+        "/api/run/stream", json={"query": "hi", "paths": ["", "   "]}, headers=_csrf_headers(client)
+    )
     assert "no authorized data paths" in r.text
     assert calls == []
 
@@ -172,7 +195,11 @@ def test_run_stream_with_real_runtime_and_fake_client(
     )
     seq = _SeqClient([ModelResponse(content=[TextBlock("hello world")], stop_reason="end_turn")])
     client = TestClient(create_app(config, client=seq))
-    r = client.post("/api/run/stream", json={"query": "hi", "paths": ["/data/dummy.csv"]})
+    r = client.post(
+        "/api/run/stream",
+        json={"query": "hi", "paths": ["/data/dummy.csv"]},
+        headers=_csrf_headers(client),
+    )
     assert r.status_code == 200
     assert "hello world" in r.text
     assert 'data: {"type": "complete"' in r.text
@@ -189,10 +216,49 @@ def test_run_stream_surfaces_bad_project_as_error_frame(
     r = client.post(
         "/api/run/stream",
         json={"query": "hi", "paths": ["/data/x"], "project": "no_such_project"},
+        headers=_csrf_headers(client),
     )
     assert r.status_code == 200
     assert 'data: {"type": "error"' in r.text
     assert "no_such_project" in r.text
+
+
+def test_run_stream_and_approval_require_csrf_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same-origin agent endpoints are CSRF-guarded: no/mismatched X-DAA-Token → 403.
+
+    This is the control that stops a same-origin artifact page (or any cross-site
+    form) from silently driving the agent run or a pending approval (review HIGH #1).
+    """
+    import data_analysis_agent.server.app as server_app
+
+    monkeypatch.setattr(
+        server_app.AgentRuntime, "from_config", lambda config, **kw: _FakeRuntime([])
+    )
+    client = TestClient(server_app.create_app(_config()))
+
+    # No token at all → 403.
+    assert (
+        client.post("/api/run/stream", json={"query": "hi", "paths": ["/data/x"]}).status_code
+        == 403
+    )
+    assert client.post("/api/approval", json={"approved": True}).status_code == 403
+    # Wrong token → 403 (the served token is the only accepted one).
+    bad = {"X-DAA-Token": "not-the-server-token"}
+    assert (
+        client.post(
+            "/api/run/stream", json={"query": "hi", "paths": ["/data/x"]}, headers=bad
+        ).status_code
+        == 403
+    )
+    assert client.post("/api/approval", json={"approved": True}, headers=bad).status_code == 403
+    # The token the server actually served IS accepted (control reaches the handler).
+    good = _csrf_headers(client)
+    assert (
+        client.post(
+            "/api/run/stream", json={"query": "hi", "paths": ["/data/x"]}, headers=good
+        ).status_code
+        == 200
+    )
 
 
 # ----------------------------- 统一 workbench(server 挂 web,#30) -----------------------------
@@ -229,7 +295,12 @@ def test_artifact_preview_reachable_and_guarded(tmp_path: Path) -> None:
 
     (tmp_path / "report.html").write_text("<h1>ok</h1>", encoding="utf-8")
     client = TestClient(create_app(_config(), artifact_dir=tmp_path))
-    assert client.get("/workbench/artifacts/report.html").status_code == 200
+    ok = client.get("/workbench/artifacts/report.html")
+    assert ok.status_code == 200
+    # Served untrusted (agent) HTML runs in an opaque origin so it cannot reach the
+    # workbench origin to read the CSRF token or drive run/approval (review HIGH #1).
+    assert ok.headers["content-security-policy"] == "sandbox"
+    assert ok.headers["x-content-type-options"] == "nosniff"
     assert client.get("/workbench/artifacts/../secret.html").status_code == 404
 
 
@@ -405,5 +476,5 @@ def test_approval_resolve_without_pending_fails_closed(tmp_path: Path, monkeypat
 
     monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
     client = TestClient(create_app(_config()))
-    res = client.post("/api/approval", json={"approved": True})
+    res = client.post("/api/approval", json={"approved": True}, headers=_csrf_headers(client))
     assert res.json()["resolved"] is False

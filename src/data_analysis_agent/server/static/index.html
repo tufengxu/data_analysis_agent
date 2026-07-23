@@ -554,6 +554,8 @@
     </div>
 
     <script>
+      // CSRF token,server 渲染时注入(见 server/app.py index());run/approval 请求回显。
+      const CSRF = "__DAA_CSRF__";
       // 主题切换(#30):localStorage 持久,默认随系统 prefers-color-scheme。
       (function () {
         const saved = localStorage.getItem("daa-theme");
@@ -651,16 +653,8 @@
             artifacts.push(a);
             const div = document.createElement("div");
             div.className = "t-art";
-            const raw = typeof a === "string" ? a : a.name || a.path || a;
-            const base = String(raw).split("/").pop();
-            const isHtml = base.endsWith(".html");
-            div.innerHTML = isHtml
-              ? '📄 <a href="/workbench/artifacts/' +
-                encodeURIComponent(base) +
-                '" target="_blank" rel="noopener">' +
-                escapeHtml(base) +
-                "</a>"
-              : "📄 " + escapeHtml(base);
+            const link = artifactLink(a);
+            div.innerHTML = "📄 " + (link || artifactLabel(a));
             card.appendChild(div);
           }
         }
@@ -718,7 +712,10 @@
         try {
           await fetch("/api/approval", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "X-DAA-Token": CSRF,
+            },
             body: JSON.stringify({ approved: approved }),
           });
         } catch (e) {
@@ -750,18 +747,12 @@
           files.innerHTML = '<li class="muted">(无)</li>';
         } else {
           for (const a of new Set(artifacts)) {
-            const raw = typeof a === "string" ? a : a.name || a.path || a;
-            const base = String(raw).split("/").pop();
             const li = document.createElement("li");
-            if (base.endsWith(".html")) {
-              li.innerHTML =
-                '<a href="/workbench/artifacts/' +
-                encodeURIComponent(base) +
-                '" target="_blank" rel="noopener">' +
-                escapeHtml(base) +
-                "</a>";
+            const link = artifactLink(a);
+            if (link) {
+              li.innerHTML = link;
             } else {
-              li.textContent = base;
+              li.textContent = String(artifactLabel(a));
             }
             files.appendChild(li);
           }
@@ -834,7 +825,10 @@
 
         const resp = await fetch("/api/run/stream", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-DAA-Token": CSRF,
+          },
           body: JSON.stringify({ query: q, paths: paths, project: project }),
         });
         if (!resp.ok || !resp.body) {
@@ -979,6 +973,28 @@
       }
       function truncate(s, n) {
         return s.length > n ? s.slice(0, n) + "\n…(截断)" : s;
+      }
+
+      // 产物链接渲染(#29/#3):basename 仅为展示;真正的安全闸在 server 侧
+      // _validate_artifact_name + is_relative_to(单一事实源,未弱化)。此处只做
+      // 裸名 + .html 判断,链接拼到 /workbench/artifacts(该路由再独立校验)。
+      function artifactLink(a) {
+        const raw = typeof a === "string" ? a : a.name || a.path || "";
+        // 裸名:剥掉目录与反斜杠;拒绝 .. 与点开头(镜像 server 规则,纯防御)。
+        const base = String(raw).split(/[\\/]/).pop();
+        if (!base || base.startsWith(".") || base.includes("..")) return null;
+        if (!base.endsWith(".html")) return null;
+        return (
+          '<a href="/workbench/artifacts/' +
+          encodeURIComponent(base) +
+          '" target="_blank" rel="noopener">' +
+          escapeHtml(base) +
+          "</a>"
+        );
+      }
+      function artifactLabel(a) {
+        const raw = typeof a === "string" ? a : a.name || a.path || "";
+        return escapeHtml(String(raw).split(/[\\/]/).pop());
       }
     </script>
   </body>

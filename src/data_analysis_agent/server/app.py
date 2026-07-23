@@ -8,6 +8,7 @@ so the Web runs the SAME agent as the CLI (same tools, skills, permission engine
 from __future__ import annotations
 
 import json
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -72,28 +73,49 @@ def create_app(
     # Web approval handler bound per run inside _stream (single-run workbench);
     # /api/approval resolves the pending AWAITING_CONFIRMATION decision.
     app.state.approval_handler = WebApprovalHandler()
-    # One shared artifacts dir for the whole workbench: agent runs (no project) and
-    # the web /workbench/artifacts preview both read/write it, so live-run artifact
-    # links resolve. Defaults under DAA_HOME so reports persist across restarts.
+    # CSRF guard for same-origin agent-driven endpoints: the served UI embeds this
+    # token and must echo it back as X-DAA-Token on /api/run/stream + /api/approval.
+    # Blocks a same-origin artifact page from silently driving the agent/approval.
+    app.state.csrf_token = secrets.token_urlsafe(24)
+
+    # The artifact dir holds BOTH the reporting pipeline's reports AND the agent
+    # run's HTML output — in this product they are the same files (the agent's
+    # html_report tool output IS the report the user previews). One dir is shared
+    # by the runtime (writes) and the workbench (serves). Serving that untrusted
+    # HTML inline would be stored-XSS that could drive /api/approval & /api/run/stream,
+    # so it is mitigated NOT by directory separation (that breaks preview) but by:
+    #   * CSP `sandbox` on the artifact route → opaque origin (web/app.py): the page's
+    #     scripts still run (ECharts renders) but it can NOT reach the workbench origin,
+    #     so it can neither read the CSRF token nor call the guarded endpoints (HIGH #1);
+    #   * the X-DAA-Token CSRF check below → defense in depth for the guarded endpoints;
+    #   * the bare-name + .html-only + is_relative_to guard → only .html is served;
+    #   * chmod 0o700 → the dir is not world-readable on disk (MEDIUM #2).
     if artifact_dir is None:
         from ..workspace import default_home
 
         artifact_dir = default_home() / "artifacts"
-    shared_artifacts = Path(artifact_dir).expanduser().resolve()
-    shared_artifacts.mkdir(parents=True, exist_ok=True)
-    app.state.artifact_dir = shared_artifacts
+    artifacts = Path(artifact_dir).expanduser().resolve()
+    artifacts.mkdir(parents=True, exist_ok=True)
+    artifacts.chmod(0o700)  # not world-readable (review MEDIUM #2)
+    app.state.artifact_dir = artifacts
 
-    # Mount the report workbench (web/) under /workbench; routes stay relative.
-    app.mount("/workbench", create_web_app(shared_artifacts))
+    # Mount the report workbench (web/) under /workbench; serves `artifacts`.
+    app.mount("/workbench", create_web_app(artifacts))
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
-        return (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        return (
+            (_STATIC_DIR / "index.html")
+            .read_text(encoding="utf-8")
+            .replace("__DAA_CSRF__", app.state.csrf_token)
+        )
 
     @app.post("/api/run/stream")
-    async def run_stream(req: RunRequest) -> StreamingResponse:
+    async def run_stream(req: RunRequest, request: Request) -> StreamingResponse:
         if not config.api_key:
             raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY not set")
+        if request.headers.get("X-DAA-Token") != app.state.csrf_token:
+            raise HTTPException(status_code=403, detail="missing/invalid CSRF token")
         return StreamingResponse(
             _stream(req, config, client, app.state.approval_handler, app.state.artifact_dir),
             media_type="text/event-stream",
@@ -101,8 +123,10 @@ def create_app(
         )
 
     @app.post("/api/approval")
-    def approval(verdict: ApprovalVerdict) -> dict[str, Any]:
+    def approval(verdict: ApprovalVerdict, request: Request) -> dict[str, Any]:
         """浏览器的审批决定(#27);无 pending 决定则 fail-closed 返回 not pending。"""
+        if request.headers.get("X-DAA-Token") != app.state.csrf_token:
+            raise HTTPException(status_code=403, detail="missing/invalid CSRF token")
         ok = app.state.approval_handler.resolve(verdict.approved)
         if not ok:
             return {"resolved": False, "reason": "no pending approval"}
