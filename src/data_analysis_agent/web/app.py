@@ -205,7 +205,19 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
         path = (artifacts / name).resolve()
         if not path.is_relative_to(artifacts) or not path.exists():
             raise HTTPException(status_code=404, detail="artifact not found")
-        return FileResponse(path, media_type="text/html", headers={"Content-Disposition": "inline"})
+        return FileResponse(
+            path,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": "inline",
+                # Served HTML is agent/tool output (untrusted). `sandbox` forces an
+                # opaque origin: scripts still run (ECharts charts render) but the
+                # document can NOT reach the workbench origin — no reading the CSRF
+                # token, no driving /api/approval or /api/run/stream (review HIGH #1).
+                "Content-Security-Policy": "sandbox",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.post("/api/feedback")
     def feedback(req: FeedbackRequest) -> dict[str, Any]:
