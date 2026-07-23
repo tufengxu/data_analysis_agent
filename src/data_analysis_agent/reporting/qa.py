@@ -19,6 +19,7 @@ import dataclasses
 import enum
 import re
 from collections.abc import Callable, Mapping
+from typing import Any
 
 from data_analysis_agent.reporting.chart_rules import MIN_SCATTER_POINTS, MIN_TREND_POINTS
 from data_analysis_agent.reporting.contract import (
@@ -396,6 +397,94 @@ def _check_data_sufficiency_charts(
     return out
 
 
+# chart_render 在产出的 option 顶层注入的来源标记键(见 chart_render._SOURCE_KEY)。
+# 出口 QA 凭此区分「经结构化 chart_render 管线产出」与「手写裸 ECharts」。
+_SOURCE_KEY = "_source"
+
+
+def _check_chart_provenance(
+    document: ReportDocument,
+    chart_options: Mapping[str, Any] | None,
+) -> list[QAFinding]:
+    """P0-3 数值校验(来源标注分支):出口处对每张图做两道纯结构检查。
+
+    不判断数值对错(无 kernel join key,见 spec),只标「无依据」:
+    * ``chart.no_source`` — option 无 ``_source`` 标记,数值无来源轨迹。这是
+      advisory 提示,非强保证:``_source`` 可被手写 option 伪造,且升级前旧
+      chart_render 产物无此标记会被误标。真实威胁是「模型**意外**绕过 chart_render
+      手写裸 ECharts」,不是对抗伪造,故可接受。
+    * ``chart.shape_mismatch`` — bar/line 系列 ``series[*].data`` 长度与 ``xAxis.data``
+      类别数不一致(结构性自相矛盾,非启发式);heatmap/scatter 等非「一类别一点」
+      结构跳过(见 ``_check_chart_shape``)。
+    两道均 HIGH(不阻断),与 evidence 系一致;chart_options 缺省/None 则整项 skip。
+    """
+    if chart_options is None:
+        return []
+    out: list[QAFinding] = []
+    for b in document.blocks:
+        if b.role is not BlockRole.CHART:
+            continue
+        option = chart_options.get(b.block_id)
+        if not isinstance(option, dict):
+            # option 缺失由 chart_block.no_spec / 渲染层管,这里不重复判。
+            continue
+        source = option.get(_SOURCE_KEY)
+        if not (isinstance(source, dict) and source.get("tool") == "chart_render"):
+            out.append(
+                QAFinding(
+                    Severity.HIGH,
+                    "chart.no_source",
+                    "图表数值无来源标注(可能绕过 chart_render 手写)",
+                    b.block_id,
+                    "改用 chart_render 生成图表,使数值带来源标注",
+                )
+            )
+        out.extend(_check_chart_shape(b.block_id, option))
+    return out
+
+
+def _check_chart_shape(block_id: str, option: dict[str, Any]) -> list[QAFinding]:
+    """category 轴家族:series[*].data 长度须与 xAxis.data 类别数一致。
+
+    只对 bar/line 系列做长度比对 —— 这两类每个 data 点对应一个类别。其余一律跳过
+    (无法判定,不误报):scatter/heatmap 的 series.data 是坐标/三元组(长度=点数或
+    单元格数,≠类别数),funnel 无 xAxis。waterfall/dot 也归 bar 系列(长度=类别数),
+    由同一条规则覆盖;waterfall 把点包成 {value,itemStyle},dot 是纯数值,两者长度
+    都=类别数,均可比。
+    """
+    x_axis = option.get("xAxis")
+    if not isinstance(x_axis, dict) or x_axis.get("type") != "category":
+        return []
+    categories = x_axis.get("data")
+    if not isinstance(categories, list):
+        return []
+    n_cat = len(categories)
+    series = option.get("series")
+    if not isinstance(series, list):
+        return []
+    out: list[QAFinding] = []
+    for idx, s in enumerate(series):
+        if not isinstance(s, dict):
+            continue
+        # 仅 bar/line 系列的 data 是「一类别一点」;其余结构(heatmap 三元组等)跳过。
+        if s.get("type") not in ("bar", "line"):
+            continue
+        data = s.get("data")
+        if not isinstance(data, list):
+            continue
+        if len(data) != n_cat:
+            out.append(
+                QAFinding(
+                    Severity.HIGH,
+                    "chart.shape_mismatch",
+                    f"series[{idx}] 数据点数 ({len(data)}) 与类别轴类别数 ({n_cat}) 不一致",
+                    block_id,
+                    "核对 chart_render 传入的 labels/series,使每条 series 长度等于类别数",
+                )
+            )
+    return out
+
+
 def _check_recommendations(document: ReportDocument) -> list[QAFinding]:
     out: list[QAFinding] = []
     for b in document.blocks:
@@ -563,6 +652,7 @@ def run_qa(
     n_points_by_chart: Mapping[str, int] | None = None,
     n_observations_by_chart: Mapping[str, int] | None = None,
     evidence_resolver: Callable[[str], bool | None] | None = None,
+    chart_options: Mapping[str, Any] | None = None,
 ) -> QAReport:
     """对 ReportDocument 跑确定性 QA,返回 readiness + findings(无 LLM)。"""
     contract = document.contract
@@ -582,6 +672,7 @@ def run_qa(
     findings.extend(
         _check_data_sufficiency_charts(document, n_points_by_chart, n_observations_by_chart)
     )
+    findings.extend(_check_chart_provenance(document, chart_options))
     findings.extend(_check_recommendations(document))
     findings.extend(_check_causal(document))
     findings.extend(_check_partial_period(document, contract))
