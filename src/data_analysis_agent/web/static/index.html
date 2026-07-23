@@ -131,6 +131,83 @@
       .fb-err {
         color: #c0392b;
       }
+      /* 意图表单 + QA findings(P1-3.6,#26) */
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px 16px;
+        margin-top: 6px;
+      }
+      .form-grid label {
+        display: flex;
+        flex-direction: column;
+        font-size: 12px;
+        color: #5a6b7b;
+        gap: 3px;
+      }
+      .form-grid select,
+      .form-grid input[type="text"] {
+        padding: 6px 8px;
+        border: 1px solid #d0d7de;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+      .qa-finding {
+        border-left: 3px solid #d0d7de;
+        padding: 6px 12px;
+        margin: 8px 0;
+        font-size: 13px;
+        background: #fbfcfd;
+        border-radius: 0 4px 4px 0;
+      }
+      .qa-finding .sev {
+        display: inline-block;
+        font-weight: 700;
+        font-size: 11px;
+        padding: 1px 8px;
+        border-radius: 8px;
+        margin-right: 8px;
+        text-transform: uppercase;
+      }
+      .sev-blocker {
+        background: #fdedec;
+        color: #c0392b;
+      }
+      .qa-finding.sev-blocker {
+        border-left-color: #c0392b;
+      }
+      .sev-high {
+        background: #fef5e7;
+        color: #b9770e;
+      }
+      .qa-finding.sev-high {
+        border-left-color: #b9770e;
+      }
+      .sev-medium {
+        background: #fef9e7;
+        color: #9a620b;
+      }
+      .qa-finding.sev-medium {
+        border-left-color: #e0b53e;
+      }
+      .sev-info {
+        background: #e8f0fb;
+        color: #2f5aa0;
+      }
+      .qa-finding.sev-info {
+        border-left-color: #4a7bd0;
+      }
+      .qa-finding .fix {
+        color: #1e8449;
+        font-size: 12px;
+        margin-top: 3px;
+      }
+      .qa-finding .code {
+        font-family: ui-monospace, monospace;
+        color: #8a97a3;
+        font-size: 11px;
+      }
     </style>
   </head>
   <body>
@@ -159,18 +236,75 @@
     </div>
 
     <div class="panel">
-      <h2>3. 报告契约(report_contract)</h2>
+      <h2>3. 报告意图 → 契约预览(report_contract)</h2>
       <input
         type="text"
         id="contract-q"
         placeholder="分析问题(如:上周销售日报)"
       />
-      <button onclick="callContract()">建契约</button>
+      <div class="form-grid">
+        <label
+          >报告类型
+          <select id="f-report-type">
+            <option value="">自动(由需求推断)</option>
+            <option value="daily_kpi">日报 daily_kpi</option>
+            <option value="weekly_kpi">周报 weekly_kpi</option>
+            <option value="diagnostic">诊断 diagnostic</option>
+            <option value="recommendation">建议 recommendation</option>
+            <option value="data_quality">数据质量 data_quality</option>
+            <option value="funnel">漏斗 funnel</option>
+            <option value="cohort">cohort cohort</option>
+            <option value="risk_anomaly">风险异常 risk_anomaly</option>
+            <option value="ad_hoc">临时 ad_hoc</option>
+          </select>
+        </label>
+        <label
+          >受众
+          <select id="f-audience">
+            <option value="">自动</option>
+            <option value="business_stakeholder">业务方</option>
+            <option value="technical">技术方</option>
+          </select>
+        </label>
+        <label
+          >频率 cadence
+          <select id="f-cadence">
+            <option value="">—</option>
+            <option value="daily">日</option>
+            <option value="weekly">周</option>
+            <option value="monthly">月</option>
+            <option value="ad_hoc">临时</option>
+          </select>
+        </label>
+        <label
+          >周期 period
+          <input type="text" id="f-period" placeholder="如 2026-W29 / 上周" />
+        </label>
+        <label
+          >对比基线
+          <select id="f-baseline">
+            <option value="">—</option>
+            <option value="wow">环比 WoW</option>
+            <option value="mom">环比 MoM</option>
+            <option value="yoy">同比 YoY</option>
+            <option value="target">对目标</option>
+          </select>
+        </label>
+        <label
+          >输出语言
+          <select id="f-language">
+            <option value="">自动</option>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+      </div>
+      <button onclick="callContract()">生成契约预览</button>
       <pre id="contract-output"></pre>
     </div>
 
     <div class="panel">
-      <h2>4. 报告 QA</h2>
+      <h2>4. 报告 QA(draft 检查)</h2>
       <textarea
         id="qa-input"
         rows="6"
@@ -181,7 +315,7 @@
         已产出</label
       >
       <button onclick="callQA()">跑 QA</button>
-      <pre id="qa-output"></pre>
+      <div id="qa-output"></div>
     </div>
 
     <div class="panel">
@@ -272,10 +406,30 @@
           2,
         );
       }
+      // 读取意图表单(P1-3.6):空值字段不传给后端(后端有各自默认/回退)。
+      function intentFields() {
+        const g = (id) => document.getElementById(id).value.trim();
+        const fields = {
+          question: g("contract-q"),
+          report_type: g("f-report-type"),
+          audience: g("f-audience"),
+          language: g("f-language"),
+        };
+        // cadence/period/baseline 后端契约端点当前不消费,随 question 注入提示。
+        const extra = [
+          ["频率", g("f-cadence")],
+          ["周期", g("f-period")],
+          ["对比基线", g("f-baseline")],
+        ]
+          .filter(([, v]) => v)
+          .map(([k, v]) => k + ":" + v)
+          .join(";");
+        if (extra)
+          fields.question = (fields.question || "") + "【" + extra + "】";
+        return Object.fromEntries(Object.entries(fields).filter(([, v]) => v));
+      }
       async function callContract() {
-        const r = await post("/api/report/contract", {
-          question: document.getElementById("contract-q").value,
-        });
+        const r = await post("/api/report/contract", intentFields());
         document.getElementById("contract-output").textContent = JSON.stringify(
           r,
           null,
@@ -290,21 +444,57 @@
           artifact_exists: artifact,
         });
         const el = document.getElementById("qa-output");
-        el.textContent = "";
+        el.innerHTML = "";
         lastReadiness = r.readiness;
         const badgeEl = document.createElement("span");
         badgeEl.className = "readiness r-" + r.readiness;
-        badgeEl.textContent = r.readiness;
-        el.append(
-          badgeEl,
-          " " +
-            r.findings.length +
-            " findings\n\n" +
-            JSON.stringify(
-              r.findings.map((f) => f.severity + ": " + f.code),
-              null,
-              2,
-            ),
+        badgeEl.textContent =
+          {
+            draft: "draft 草稿",
+            needs_review: "needs review 待审",
+            ready: "ready 就绪",
+          }[r.readiness] || r.readiness;
+        el.appendChild(badgeEl);
+        el.appendChild(
+          document.createTextNode(" " + r.findings.length + " findings"),
+        );
+        // 按 severity 排序渲染:blocker > high > medium > info。
+        const order = { blocker: 0, high: 1, medium: 2, info: 3 };
+        const sorted = [...r.findings].sort(
+          (a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9),
+        );
+        for (const f of sorted) {
+          const div = document.createElement("div");
+          div.className = "qa-finding sev-" + f.severity;
+          let html =
+            '<span class="sev">' +
+            escapeHtml(f.severity) +
+            "</span>" +
+            escapeHtml(f.message) +
+            ' <span class="code">' +
+            escapeHtml(f.code) +
+            (f.block_id ? " · " + escapeHtml(f.block_id) : "") +
+            "</span>";
+          if (f.suggested_fix)
+            html +=
+              '<div class="fix">→ 建议:' +
+              escapeHtml(f.suggested_fix) +
+              "</div>";
+          div.innerHTML = html;
+          el.appendChild(div);
+        }
+      }
+      function escapeHtml(s) {
+        return String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
         );
       }
       async function callTemplate() {
