@@ -72,9 +72,19 @@ def create_app(
     # Web approval handler bound per run inside _stream (single-run workbench);
     # /api/approval resolves the pending AWAITING_CONFIRMATION decision.
     app.state.approval_handler = WebApprovalHandler()
+    # One shared artifacts dir for the whole workbench: agent runs (no project) and
+    # the web /workbench/artifacts preview both read/write it, so live-run artifact
+    # links resolve. Defaults under DAA_HOME so reports persist across restarts.
+    if artifact_dir is None:
+        from ..workspace import default_home
+
+        artifact_dir = default_home() / "artifacts"
+    shared_artifacts = Path(artifact_dir).expanduser().resolve()
+    shared_artifacts.mkdir(parents=True, exist_ok=True)
+    app.state.artifact_dir = shared_artifacts
 
     # Mount the report workbench (web/) under /workbench; routes stay relative.
-    app.mount("/workbench", create_web_app(artifact_dir))
+    app.mount("/workbench", create_web_app(shared_artifacts))
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
@@ -85,7 +95,7 @@ def create_app(
         if not config.api_key:
             raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY not set")
         return StreamingResponse(
-            _stream(req, config, client, app.state.approval_handler),
+            _stream(req, config, client, app.state.approval_handler, app.state.artifact_dir),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -157,6 +167,7 @@ async def _stream(
     config: AgentConfig,
     client: Any,
     approval_handler: WebApprovalHandler,
+    artifact_dir: Path,
 ) -> Any:
     """Run one agent turn and yield SSE ``data: <json>\\n\\n`` frames."""
     # Fail closed: drop blank/whitespace entries, then require ≥1 real path.
@@ -190,6 +201,7 @@ async def _stream(
             analysis_paths=paths,
             project=project,
             approval_handler=approval_handler,
+            run_artifact_dir=None if project is not None else artifact_dir,
         )
         async for event in approval_ui(approval_handler)(runtime.session.send(req.query)):
             yield _frame(encode(event))

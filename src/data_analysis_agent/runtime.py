@@ -282,6 +282,7 @@ class AgentRuntime:
         extra_skills: Sequence[Skill] = (),
         analysis_paths: Sequence[str | Path] | None = None,
         project: Project | None = None,
+        run_artifact_dir: str | Path | None = None,
     ) -> AgentRuntime:
         """Assemble loop + session from config. Feature switches (kernel/memory/
         telemetry) come from the config; one-off overrides are explicit kwargs.
@@ -289,6 +290,8 @@ class AgentRuntime:
         When ``project`` is given, session-facing state (artifacts / kernel
         workspace / results / message store) is routed under the project root and a
         fresh ``run_id`` is allocated; otherwise behaviour is unchanged.
+        ``run_artifact_dir`` (no project only) pins the artifacts dir — e.g. the Web
+        workbench shares one dir with its artifact preview route instead of a tmp dir.
         """
         if config.sensitive_mode:
             # Suppress privacy-relevant capture for this run: no memory writes and
@@ -317,7 +320,12 @@ class AgentRuntime:
             kernel_work_dir.mkdir(parents=True, exist_ok=True)
             result_store = _project_result_store(config, project.results_dir_for(run_id))
         else:
-            artifacts_dir = config.artifacts_dir(persist_path)
+            artifacts_dir = (
+                Path(run_artifact_dir).expanduser().resolve()
+                if run_artifact_dir is not None
+                else config.artifacts_dir(persist_path)
+            )
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
             result_store = config.result_store(persist_path)
         if config.sensitive_mode:
             # Sensitive run: do not persist the conversation — the message store
