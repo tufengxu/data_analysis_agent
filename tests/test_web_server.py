@@ -361,7 +361,7 @@ def test_approval_full_flow_approve(tmp_path: Path, monkeypatch) -> None:
 
     async def consume() -> None:
         async for frame in _stream(
-            RunRequest(query="hi", paths=["/data/x.csv"]), cfg, seq, handler
+            RunRequest(query="hi", paths=["/data/x.csv"]), cfg, seq, handler, tmp_path / "artifacts"
         ):
             frames.append(frame)
             if "AWAITING_CONFIRMATION" in frame and not resolved:
