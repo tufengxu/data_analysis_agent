@@ -343,7 +343,14 @@ class AgentLoop:
                     role="assistant",
                     content=assistant_content,
                 )
-                state = state.with_messages(state.messages + [assistant_msg])
+                # A successful model call breaks the transient-error streak —
+                # reset its budget so an early 429 storm in a long run doesn't
+                # starve later, unrelated transient errors. (has_attempted_
+                # reactive_compact is intentionally NOT reset — it's a one-shot
+                # per-run lever; transient is a per-streak counter.)
+                state = state.with_messages(
+                    state.messages + [assistant_msg]
+                ).with_transient_recovery_count(0)
                 if self.store is not None:
                     self.store.append(assistant_msg)
 
