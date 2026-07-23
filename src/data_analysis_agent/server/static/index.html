@@ -533,21 +533,22 @@
             "</pre>";
           card.appendChild(d);
         }
-        // 产物链接
+        // 产物链接:basename 解析(事件可能带绝对路径),仅 workspace .html 可点(#29 安全)
         if (ev.artifacts && ev.artifacts.length) {
           for (const a of ev.artifacts) {
             artifacts.push(a);
             const div = document.createElement("div");
             div.className = "t-art";
-            const name = typeof a === "string" ? a : a.name || a.path || a;
-            const isHtml = String(name).endsWith(".html");
+            const raw = typeof a === "string" ? a : a.name || a.path || a;
+            const base = String(raw).split("/").pop();
+            const isHtml = base.endsWith(".html");
             div.innerHTML = isHtml
               ? '📄 <a href="/workbench/artifacts/' +
-                encodeURIComponent(name) +
+                encodeURIComponent(base) +
                 '" target="_blank" rel="noopener">' +
-                escapeHtml(name) +
+                escapeHtml(base) +
                 "</a>"
-              : "📄 " + escapeHtml(name);
+              : "📄 " + escapeHtml(base);
             card.appendChild(div);
           }
         }
@@ -637,9 +638,19 @@
           files.innerHTML = '<li class="muted">(无)</li>';
         } else {
           for (const a of new Set(artifacts)) {
-            const name = typeof a === "string" ? a : a.name || a.path || a;
+            const raw = typeof a === "string" ? a : a.name || a.path || a;
+            const base = String(raw).split("/").pop();
             const li = document.createElement("li");
-            li.textContent = name;
+            if (base.endsWith(".html")) {
+              li.innerHTML =
+                '<a href="/workbench/artifacts/' +
+                encodeURIComponent(base) +
+                '" target="_blank" rel="noopener">' +
+                escapeHtml(base) +
+                "</a>";
+            } else {
+              li.textContent = base;
+            }
             files.appendChild(li);
           }
         }
