@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from ..config import AgentConfig
 from ..runtime import AgentRuntime
+from ..web.app import create_app as create_web_app
 from .event_codec import encode
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -35,12 +36,22 @@ def create_app(
     config: AgentConfig | None = None,
     *,
     client: Any = None,
+    artifact_dir: str | Path | None = None,
 ) -> FastAPI:
-    """Build the workbench app. ``client`` lets tests inject a fake LLM client."""
+    """Build the unified workbench app. ``client`` lets tests inject a fake LLM client.
+
+    ``artifact_dir`` is where generated HTML reports + feedback.jsonl live; it is
+    forwarded to the report workbench sub-app. The web report routes are mounted
+    under /workbench so one app (single 127.0.0.1 port) serves BOTH the live run
+    and the report/QA/artifact/feedback panels — the product's single workbench.
+    """
     config = config or AgentConfig.from_env()
     app = FastAPI(title="DataAnalysisAgent Workbench", version="0.1.0")
     app.state.config = config
     app.state.client = client
+
+    # Mount the report workbench (web/) under /workbench; routes stay relative.
+    app.mount("/workbench", create_web_app(artifact_dir))
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:

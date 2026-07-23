@@ -239,8 +239,14 @@
     </div>
 
     <script>
+      // Mounted under /workbench by the unified server app (server/app.py mounts web).
+      // Derive the base so fetches work whether served at / or /workbench/.
+      const BASE = location.pathname.startsWith("/workbench")
+        ? "/workbench"
+        : "";
+
       async function post(url, body) {
-        const res = await fetch(url, {
+        const res = await fetch(BASE + url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -304,7 +310,7 @@
       async function callTemplate() {
         const text = document.getElementById("tpl-input").value;
         const res = await fetch(
-          "/api/template?text=" + encodeURIComponent(text),
+          BASE + "/api/template?text=" + encodeURIComponent(text),
         );
         const r = await res.json();
         document.getElementById("tpl-output").textContent = JSON.stringify(
@@ -316,7 +322,7 @@
       function loadArtifact() {
         const name = document.getElementById("art-input").value;
         document.getElementById("art-frame").src =
-          "/artifacts/" + encodeURIComponent(name);
+          BASE + "/artifacts/" + encodeURIComponent(name);
       }
 
       // ---- 反馈(P1-3.8):Good/Bad/Rephrase + 可选短评 → /api/feedback ----
@@ -348,7 +354,7 @@
           readiness: lastReadiness || "",
         };
         try {
-          const res = await fetch("/api/feedback", {
+          const res = await fetch(BASE + "/api/feedback", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),

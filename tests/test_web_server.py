@@ -193,3 +193,41 @@ def test_run_stream_surfaces_bad_project_as_error_frame(
     assert r.status_code == 200
     assert 'data: {"type": "error"' in r.text
     assert "no_such_project" in r.text
+
+
+# ----------------------------- 统一 workbench(server 挂 web,#30) -----------------------------
+
+
+def test_report_workbench_mounted_under_workbench(tmp_path: Path) -> None:
+    """One app serves BOTH live run and report workbench (single-port workbench)."""
+    from data_analysis_agent.server.app import create_app
+
+    client = TestClient(create_app(_config(), artifact_dir=tmp_path))
+    r = client.get("/workbench/")
+    assert r.status_code == 200
+    assert "Workbench" in r.text
+
+
+def test_report_endpoints_reachable_through_server(tmp_path: Path) -> None:
+    """web 的报告/QA/反馈端点经 server 单一进程可达(前缀 /workbench)。"""
+    from data_analysis_agent.server.app import create_app
+
+    client = TestClient(create_app(_config(), artifact_dir=tmp_path))
+    contract = client.post("/workbench/api/report/contract", json={"question": "上周销售日报"})
+    assert contract.status_code == 200
+    assert contract.json()["report_type"] == "daily_kpi"
+
+    fb = client.post("/workbench/api/feedback", json={"tags": ["good"], "comment": "ok"})
+    assert fb.status_code == 200
+    assert fb.json()["stored"] is True
+    assert (tmp_path / "feedback.jsonl").exists()
+
+
+def test_artifact_preview_reachable_and_guarded(tmp_path: Path) -> None:
+    """artifact 预览经统一 app 可达且仍限 workspace/artifacts 内 .html。"""
+    from data_analysis_agent.server.app import create_app
+
+    (tmp_path / "report.html").write_text("<h1>ok</h1>", encoding="utf-8")
+    client = TestClient(create_app(_config(), artifact_dir=tmp_path))
+    assert client.get("/workbench/artifacts/report.html").status_code == 200
+    assert client.get("/workbench/artifacts/../secret.html").status_code == 404
