@@ -302,3 +302,108 @@ def test_list_projects(tmp_path: Path, monkeypatch) -> None:
     client = TestClient(create_app(_config()))
     ids = [p["project_id"] for p in client.get("/api/projects").json()["projects"]]
     assert ids == ["alpha", "beta"]
+
+
+# ----------------------------- 审批通道(P1-3.7 / #27) -----------------------------
+
+
+def test_approval_full_flow_approve(tmp_path: Path, monkeypatch) -> None:
+    """local_safe mutator → 挂起 AWAITING_CONFIRMATION(帧带 additive tool_name/params)
+    → 异线程 resolve(同真实 /api/approval 从不同线程唤醒)→ 继续执行至 complete。
+
+    直接驱动 ``_stream``(不经 TestClient):后者在流挂起时缓冲帧,测不到 AWAITING。
+    """
+    import threading
+
+    import anyio
+
+    from data_analysis_agent.protocol.messages import ModelResponse, TextBlock, ToolUseBlock
+    from data_analysis_agent.server.app import RunRequest, _stream
+    from data_analysis_agent.server.approval import WebApprovalHandler
+
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+
+    class _Seq:
+        model = "dummy"
+
+        def __init__(self, responses):
+            self.responses = list(responses)
+
+        async def stream_model(
+            self, messages, system=None, tools=None, max_tokens=None, tool_choice=None
+        ):
+            resp = self.responses.pop(0)  # one response per turn
+            for block in resp.content:
+                yield block
+            yield resp
+
+    cfg = AgentConfig(
+        api_key="x",
+        persistent_kernel=False,
+        enable_telemetry=False,
+        enable_memory=False,
+        permission_preset="local_safe",
+    )
+    seq = _Seq(
+        [
+            ModelResponse(
+                content=[
+                    ToolUseBlock(id="t1", name="python_analysis", input={"code": "import pandas"})
+                ],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(content=[TextBlock("done")], stop_reason="end_turn"),
+        ]
+    )
+    handler = WebApprovalHandler()
+    frames: list[str] = []
+    resolved: list[bool] = []
+
+    async def consume() -> None:
+        async for frame in _stream(
+            RunRequest(query="hi", paths=["/data/x.csv"]), cfg, seq, handler
+        ):
+            frames.append(frame)
+            if "AWAITING_CONFIRMATION" in frame and not resolved:
+                resolved.append(True)
+                # /api/approval 是从 HTTP 请求线程唤醒 agent 循环的;同样从异线程 resolve。
+                threading.Timer(0.05, lambda: handler.resolve(True)).start()
+
+    async def main() -> None:
+        with anyio.move_on_after(15):
+            await consume()
+
+    anyio.run(main)
+
+    body = "".join(frames)
+    # 挂起帧带 additive 字段(wire 契约只增)
+    assert "AWAITING_CONFIRMATION" in body
+    assert '"tool_name": "python_analysis"' in body
+    # 批准后继续:回到 TOOL_CALLING → tool_result → complete
+    assert "approved" in body
+    assert '"type": "tool_result"' in body
+    assert '"type": "complete"' in body
+
+
+def test_approval_timeout_defaults_to_deny() -> None:
+    """超时 = deny(fail-closed 硬约束):handler 无人裁决时返回 False。"""
+    import asyncio
+
+    from data_analysis_agent.server import approval as approval_mod
+    from data_analysis_agent.server.approval import WebApprovalHandler
+
+    approval_mod.APPROVAL_TIMEOUT_S = 0.05  # 缩短超时以便测试
+    handler = WebApprovalHandler()
+    decision = asyncio.run(handler("python_analysis", {"code": "x"}))
+    assert decision is False
+    assert handler.pending is None
+
+
+def test_approval_resolve_without_pending_fails_closed(tmp_path: Path, monkeypatch) -> None:
+    """无 pending 决定时 /api/approval 不得误判 resolved(fail-closed)。"""
+    from data_analysis_agent.server.app import create_app
+
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    client = TestClient(create_app(_config()))
+    res = client.post("/api/approval", json={"approved": True})
+    assert res.json()["resolved"] is False
