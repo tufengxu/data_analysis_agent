@@ -226,6 +226,60 @@
       .muted {
         color: #8a97a3;
       }
+      /* 数据源面板(#24) */
+      .ds-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .ds-row label {
+        display: flex;
+        flex-direction: column;
+        font-size: 12px;
+        color: #5a6b7b;
+        gap: 3px;
+      }
+      .ds-row select {
+        padding: 6px 8px;
+        border: 1px solid #cfd8e0;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      .ds-hint {
+        font-size: 12px;
+        margin: 4px 0 8px;
+      }
+      .ds-status {
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+      .ds-status.ok {
+        color: #1e8449;
+      }
+      .ds-status.err {
+        color: #c0392b;
+      }
+      button.secondary {
+        background: #5a6b7b;
+      }
+      button.secondary:hover {
+        background: #48586a;
+      }
+      #auth-list {
+        margin: 6px 0 0;
+        padding-left: 18px;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        color: #2c3e50;
+      }
+      #auth-list li .rm {
+        color: #c0392b;
+        cursor: pointer;
+        margin-left: 8px;
+        font-family: ui-sans-serif, sans-serif;
+      }
     </style>
   </head>
   <body>
@@ -239,12 +293,39 @@
     </header>
     <main>
       <div class="panel">
-        <h2>数据源(授权路径,绝对路径,逗号分隔)</h2>
+        <h2>数据源</h2>
+        <div class="ds-row">
+          <label style="flex: 0 0 auto"
+            >project(可选,用于上传与产物归位)
+            <select id="project">
+              <option value="">(不使用 project)</option>
+            </select>
+          </label>
+        </div>
+        <div class="ds-row">
+          <input
+            type="file"
+            id="file-input"
+            multiple
+            accept=".csv,.xlsx,.xls,.parquet"
+          />
+          <button type="button" class="secondary" onclick="uploadSelected()">
+            上传到 project uploads/
+          </button>
+          <span id="upload-status" class="ds-status"></span>
+        </div>
+        <p class="muted ds-hint">
+          浏览器文件选择不暴露服务端绝对路径;上传后路径会自动填入下方授权列表。或手动输入已授权的绝对路径(文件或目录)。
+        </p>
         <input
           type="text"
           id="paths"
-          placeholder="/data/sales.csv, /data/dim_sku.xlsx"
+          placeholder="授权数据路径(绝对路径,逗号分隔),如 /data/sales.csv"
         />
+        <div class="ds-row">
+          <span class="muted" id="auth-count">已授权 0 条路径</span>
+        </div>
+        <ul id="auth-list"></ul>
       </div>
 
       <div class="panel">
@@ -465,6 +546,7 @@
           .value.split(",")
           .map((s) => s.trim())
           .filter(Boolean);
+        const project = document.getElementById("project").value || null;
         if (!q) {
           setStatus("请输入提问");
           return;
@@ -484,7 +566,7 @@
         const resp = await fetch("/api/run/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: q, paths: paths }),
+          body: JSON.stringify({ query: q, paths: paths, project: project }),
         });
         if (!resp.ok || !resp.body) {
           setStatus("请求失败:" + resp.status);
@@ -513,6 +595,105 @@
         // 流结束但未收到 complete(异常断开):解锁按钮
         document.getElementById("run-btn").disabled = false;
       }
+
+      // ---- 数据源:project 选择器 + 上传 + 已授权路径列表(#24/#31) ----
+      function setUploadStatus(text, cls) {
+        const el = document.getElementById("upload-status");
+        el.textContent = text;
+        el.className = "ds-status " + (cls || "");
+      }
+
+      function refreshAuthList() {
+        const paths = document
+          .getElementById("paths")
+          .value.split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        document.getElementById("auth-count").textContent =
+          "已授权 " + paths.length + " 条路径";
+        const ul = document.getElementById("auth-list");
+        ul.innerHTML = "";
+        for (const p of paths) {
+          const li = document.createElement("li");
+          li.textContent = p;
+          ul.appendChild(li);
+        }
+      }
+
+      async function loadProjects() {
+        try {
+          const r = await fetch("/api/projects");
+          const data = await r.json();
+          const sel = document.getElementById("project");
+          for (const p of data.projects || []) {
+            const opt = document.createElement("option");
+            opt.value = p.project_id;
+            opt.textContent = p.project_id;
+            sel.appendChild(opt);
+          }
+        } catch (e) {
+          console.debug("projects unavailable", e);
+        }
+      }
+
+      async function uploadSelected() {
+        const project = document.getElementById("project").value;
+        if (!project) {
+          setUploadStatus("请先选择 project", "err");
+          return;
+        }
+        const files = document.getElementById("file-input").files;
+        if (!files || !files.length) {
+          setUploadStatus("请先选择文件", "err");
+          return;
+        }
+        setUploadStatus("上传中…", "");
+        let added = 0;
+        for (const f of files) {
+          try {
+            const res = await fetch(
+              "/api/upload?project=" +
+                encodeURIComponent(project) +
+                "&filename=" +
+                encodeURIComponent(f.name),
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/octet-stream" },
+                body: f,
+              },
+            );
+            const r = await res.json();
+            if (!res.ok) throw new Error(r.detail || res.status);
+            addPath(r.path);
+            added++;
+          } catch (e) {
+            setUploadStatus(f.name + " 上传失败: " + (e.message || e), "err");
+            return;
+          }
+        }
+        setUploadStatus("已上传 " + added + " 个文件 ✓", "ok");
+        document.getElementById("file-input").value = "";
+      }
+
+      function addPath(p) {
+        const input = document.getElementById("paths");
+        const cur = input.value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (!cur.includes(p)) {
+          cur.push(p);
+          input.value = cur.join(", ");
+        }
+        refreshAuthList();
+      }
+
+      // 已授权路径列表随输入联动;页面载入时拉取 project 列表。
+      document
+        .getElementById("paths")
+        .addEventListener("input", refreshAuthList);
+      loadProjects();
+      refreshAuthList();
 
       function escapeHtml(s) {
         return String(s).replace(
