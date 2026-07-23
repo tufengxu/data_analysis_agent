@@ -350,6 +350,101 @@
         font-size: 12px;
         color: #b9770e;
       }
+      /* 主题切换 + 响应式(#30) */
+      header nav {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .theme-toggle {
+        background: #5a6b7b;
+        padding: 4px 10px;
+        font-size: 13px;
+        line-height: 1;
+      }
+      @media (max-width: 640px) {
+        main {
+          padding: 12px;
+        }
+        .run-bar {
+          flex-direction: column;
+        }
+        .run-bar button {
+          align-self: flex-start;
+        }
+        header h1 {
+          font-size: 15px;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        body:not(.light) {
+          background: #14181d;
+          color: #d5dde4;
+        }
+        body:not(.light) header,
+        body:not(.light) .panel {
+          background: #1d232b;
+          border-color: #2b333c;
+        }
+        body:not(.light) .panel h2 {
+          color: #9db0c0;
+        }
+        body:not(.light) input[type="text"],
+        body:not(.light) textarea {
+          background: #14181d;
+          color: #d5dde4;
+          border-color: #333d47;
+        }
+        body:not(.light) .tool {
+          background: #232a32;
+          border-color: #2b333c;
+        }
+        body:not(.light) .tool pre,
+        body:not(.light) .modal-params,
+        body:not(.light) #answer pre {
+          background: #14181d;
+        }
+        body:not(.light) .modal {
+          background: #1d232b;
+        }
+        body:not(.light) header nav a {
+          color: #6ea3ef;
+        }
+      }
+      body.dark {
+        background: #14181d;
+        color: #d5dde4;
+      }
+      body.dark header,
+      body.dark .panel {
+        background: #1d232b;
+        border-color: #2b333c;
+      }
+      body.dark .panel h2 {
+        color: #9db0c0;
+      }
+      body.dark input[type="text"],
+      body.dark textarea {
+        background: #14181d;
+        color: #d5dde4;
+        border-color: #333d47;
+      }
+      body.dark .tool {
+        background: #232a32;
+        border-color: #2b333c;
+      }
+      body.dark .tool pre,
+      body.dark .modal-params,
+      body.dark #answer pre {
+        background: #14181d;
+      }
+      body.dark .modal {
+        background: #1d232b;
+      }
+      body.dark header nav a {
+        color: #6ea3ef;
+      }
     </style>
   </head>
   <body>
@@ -359,6 +454,9 @@
         <a href="/workbench/"
           >→ 报告塑造 workbench(QA / 模板 / artifact / 反馈)</a
         >
+        <button type="button" class="theme-toggle" onclick="toggleTheme()">
+          🌗
+        </button>
       </nav>
     </header>
     <main>
@@ -456,6 +554,20 @@
     </div>
 
     <script>
+      // 主题切换(#30):localStorage 持久,默认随系统 prefers-color-scheme。
+      (function () {
+        const saved = localStorage.getItem("daa-theme");
+        if (saved) document.body.classList.add(saved);
+      })();
+      function toggleTheme() {
+        const b = document.body;
+        const isDark = b.classList.contains("dark");
+        b.classList.remove("dark", "light");
+        const next = isDark ? "light" : "dark";
+        b.classList.add(next);
+        localStorage.setItem("daa-theme", next);
+      }
+
       const toolsEl = document.getElementById("tools");
       const answerEl = document.getElementById("answer");
       const statusEl = document.getElementById("status");
