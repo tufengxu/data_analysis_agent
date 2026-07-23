@@ -208,10 +208,100 @@
         color: #8a97a3;
         font-size: 11px;
       }
+      /* 顶栏导航 + 响应式 + 暗色(#30) */
+      body {
+        max-width: 1080px;
+        margin: 0 auto;
+      }
+      .topnav {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+      }
+      .topnav h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .topnav a {
+        color: #4a7bd0;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      .topnav .theme-toggle {
+        margin-left: auto;
+        background: #5a6b7b;
+        padding: 4px 12px;
+        font-size: 12px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body:not(.light) {
+          background: #14181d;
+          color: #d5dde4;
+        }
+        body:not(.light) .panel {
+          background: #1d232b;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        }
+        body:not(.light) textarea,
+        body:not(.light) input[type="text"],
+        body:not(.light) .form-grid select,
+        body:not(.light) .form-grid input[type="text"] {
+          background: #14181d;
+          color: #d5dde4;
+          border-color: #333d47;
+        }
+        body:not(.light) pre {
+          background: #14181d;
+          color: #d5dde4;
+        }
+        body:not(.light) .qa-finding {
+          background: #232a32;
+        }
+        body:not(.light) .topnav a {
+          color: #6ea3ef;
+        }
+      }
+      body.dark {
+        background: #14181d;
+        color: #d5dde4;
+      }
+      body.dark .panel {
+        background: #1d232b;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      }
+      body.dark textarea,
+      body.dark input[type="text"],
+      body.dark .form-grid select,
+      body.dark .form-grid input[type="text"] {
+        background: #14181d;
+        color: #d5dde4;
+        border-color: #333d47;
+      }
+      body.dark pre {
+        background: #14181d;
+        color: #d5dde4;
+      }
+      body.dark .qa-finding {
+        background: #232a32;
+      }
+      body.dark .topnav a {
+        color: #6ea3ef;
+      }
     </style>
   </head>
   <body>
-    <h1>DataAnalysisAgent · Report Workbench</h1>
+    <div class="topnav">
+      <h1>DataAnalysisAgent</h1>
+      <a href="/">← Live run 主面板</a>
+      <button type="button" class="theme-toggle" onclick="toggleTheme()">
+        🌗 主题
+      </button>
+    </div>
+    <h2 style="font-size: 15px; color: #5a6b7b; margin-bottom: 16px">
+      报告塑造 workbench(QA / 模板 / artifact / 反馈)
+    </h2>
 
     <div class="panel">
       <h2>1. 报告需求(report_need)</h2>
@@ -373,6 +463,20 @@
     </div>
 
     <script>
+      // 主题切换(#30):localStorage 持久,默认随系统 prefers-color-scheme。
+      (function () {
+        const saved = localStorage.getItem("daa-theme");
+        if (saved) document.body.classList.add(saved);
+      })();
+      function toggleTheme() {
+        const b = document.body;
+        const isDark = b.classList.contains("dark");
+        b.classList.remove("dark", "light");
+        const next = isDark ? "light" : "dark";
+        b.classList.add(next);
+        localStorage.setItem("daa-theme", next);
+      }
+
       // Mounted under /workbench by the unified server app (server/app.py mounts web).
       // Derive the base so fetches work whether served at / or /workbench/.
       const BASE = location.pathname.startsWith("/workbench")
