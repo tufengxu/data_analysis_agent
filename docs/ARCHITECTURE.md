@@ -128,7 +128,8 @@ src/data_analysis_agent/web/app.py = "Web Workbench(Wave8 MVP):FastAPI app + API
 src/data_analysis_agent/web/schemas.py = "Web Workbench(Wave8):Pydantic 请求模型"
 src/data_analysis_agent/web/__main__.py = "Web Workbench(Wave8):uvicorn 启动入口(data-agent-web)"
 src/data_analysis_agent/server/event_codec.py = "AgentEvent → 稳定 SSE JSON dict 的纯函数映射(roadmap P1-3.5 事件 codec 契约;字段名冻结)"
-src/data_analysis_agent/server/app.py = "FastAPI workbench:/api/run/stream(SSE 跑 runtime 推事件)+ 静态首页;localhost-only,复用 AgentRuntime.from_config"
+src/data_analysis_agent/server/app.py = "FastAPI workbench:/api/run/stream(SSE 跑 runtime 推事件)+ /api/upload + /api/approval + 静态首页;localhost-only,复用 AgentRuntime.from_config"
+src/data_analysis_agent/server/approval.py = "Web 审批通道(P1-3.7):AWAITING_CONFIRMATION 时挂起 SSE、等浏览器 /api/approval 裁决,超时=deny(fail-closed);threading.Event 跨线程/循环安全"
 src/data_analysis_agent/server/__main__.py = "uvicorn 启动入口(python -m data_analysis_agent.server,强制绑 127.0.0.1)"
 ```
 

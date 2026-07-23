@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from ..config import AgentConfig
 from ..runtime import AgentRuntime
 from ..web.app import create_app as create_web_app
+from .approval import WebApprovalHandler, approval_ui
 from .event_codec import encode
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -34,6 +35,12 @@ class RunRequest(BaseModel):
     query: str
     paths: list[str] = []  # authorized data files/dirs (absolute)
     project: str | None = None  # optional project id to run inside
+
+
+class ApprovalVerdict(BaseModel):
+    """The browser's allow/deny decision for a pending AWAITING_CONFIRMATION."""
+
+    approved: bool
 
 
 def _safe_upload_name(name: str) -> str | None:
@@ -62,6 +69,9 @@ def create_app(
     app = FastAPI(title="DataAnalysisAgent Workbench", version="0.1.0")
     app.state.config = config
     app.state.client = client
+    # Web approval handler bound per run inside _stream (single-run workbench);
+    # /api/approval resolves the pending AWAITING_CONFIRMATION decision.
+    app.state.approval_handler = WebApprovalHandler()
 
     # Mount the report workbench (web/) under /workbench; routes stay relative.
     app.mount("/workbench", create_web_app(artifact_dir))
@@ -75,10 +85,18 @@ def create_app(
         if not config.api_key:
             raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY not set")
         return StreamingResponse(
-            _stream(req, config, client),
+            _stream(req, config, client, app.state.approval_handler),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @app.post("/api/approval")
+    def approval(verdict: ApprovalVerdict) -> dict[str, Any]:
+        """浏览器的审批决定(#27);无 pending 决定则 fail-closed 返回 not pending。"""
+        ok = app.state.approval_handler.resolve(verdict.approved)
+        if not ok:
+            return {"resolved": False, "reason": "no pending approval"}
+        return {"resolved": True, "approved": verdict.approved}
 
     @app.get("/api/projects")
     def list_projects() -> dict[str, Any]:
@@ -134,7 +152,12 @@ def create_app(
     return app
 
 
-async def _stream(req: RunRequest, config: AgentConfig, client: Any) -> Any:
+async def _stream(
+    req: RunRequest,
+    config: AgentConfig,
+    client: Any,
+    approval_handler: WebApprovalHandler,
+) -> Any:
     """Run one agent turn and yield SSE ``data: <json>\\n\\n`` frames."""
     # Fail closed: drop blank/whitespace entries, then require ≥1 real path.
     # With none, the agent would otherwise default to the server process's cwd
@@ -162,9 +185,13 @@ async def _stream(req: RunRequest, config: AgentConfig, client: Any) -> Any:
     runtime = None
     try:
         runtime = AgentRuntime.from_config(
-            config, client=client, analysis_paths=paths, project=project
+            config,
+            client=client,
+            analysis_paths=paths,
+            project=project,
+            approval_handler=approval_handler,
         )
-        async for event in runtime.session.send(req.query):
+        async for event in approval_ui(approval_handler)(runtime.session.send(req.query)):
             yield _frame(encode(event))
     except Exception as exc:  # never crash the SSE mid-stream; surface as an error frame
         yield _frame({"type": "error", "error": str(exc)})
