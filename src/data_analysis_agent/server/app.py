@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -23,6 +23,10 @@ from .event_codec import encode
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
+# 允许上传的数据格式(二进制,故用裸请求体流式而非 multipart——免 python-multipart 依赖)。
+_UPLOAD_EXTS = frozenset({".csv", ".xlsx", ".xls", ".parquet"})
+_UPLOAD_MAX_BYTES = 200 * 1024 * 1024  # 200MB 上限,防滥用(localhost-only)
+
 
 class RunRequest(BaseModel):
     """One analysis request from the browser."""
@@ -30,6 +34,15 @@ class RunRequest(BaseModel):
     query: str
     paths: list[str] = []  # authorized data files/dirs (absolute)
     project: str | None = None  # optional project id to run inside
+
+
+def _safe_upload_name(name: str) -> str | None:
+    """bare 文件名(无路径、非点开头);非法返 None。镜像 web 的 artifact 名防护。"""
+    if not name or "\x00" in name:
+        return None
+    if Path(name).name != name or name.startswith("."):
+        return None
+    return name
 
 
 def create_app(
@@ -66,6 +79,57 @@ def create_app(
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @app.get("/api/projects")
+    def list_projects() -> dict[str, Any]:
+        """可选 project 列表(前端 project 选择器,#31)。"""
+        from ..workspace import Project
+
+        return {
+            "projects": [
+                {"project_id": p.project_id, "uploads_dir": str(p.uploads_dir)}
+                for p in Project.list_projects()
+            ]
+        }
+
+    @app.post("/api/upload")
+    async def upload(request: Request, project: str, filename: str) -> dict[str, Any]:
+        """流式上传一个数据文件到 project 的 uploads/(#24,后端缺口)。
+
+        裸请求体(二进制)而非 multipart:CSV/XLSX/Parquet 都是二进制,流式写盘
+        免 python-multipart 依赖且对大文件友好。路径防护 + 扩展名白名单 +
+        大小上限,fail-closed。``?project=..&filename=..`` 为 query 参数。
+        """
+        from ..workspace import Project
+
+        safe = _safe_upload_name(filename)
+        if safe is None:
+            raise HTTPException(status_code=400, detail="invalid filename")
+        ext = Path(safe).suffix.lower()
+        if ext not in _UPLOAD_EXTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unsupported type {ext!r}; allowed: {sorted(_UPLOAD_EXTS)}",
+            )
+        try:
+            proj = Project.open(project)
+        except (KeyError, ValueError, OSError) as exc:
+            raise HTTPException(status_code=404, detail=f"project not readable: {project}") from exc
+        uploads = proj.uploads_dir
+        uploads.mkdir(parents=True, exist_ok=True)
+        dest = (uploads / safe).resolve()
+        if not dest.is_relative_to(uploads.resolve()):
+            raise HTTPException(status_code=400, detail="invalid filename")
+        written = 0
+        with open(dest, "wb") as fh:
+            async for chunk in request.stream():
+                written += len(chunk)
+                if written > _UPLOAD_MAX_BYTES:
+                    fh.close()
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(status_code=413, detail="file too large")
+                fh.write(chunk)
+        return {"path": str(dest), "size": written, "filename": safe}
 
     return app
 

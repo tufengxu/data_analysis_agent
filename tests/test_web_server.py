@@ -231,3 +231,74 @@ def test_artifact_preview_reachable_and_guarded(tmp_path: Path) -> None:
     client = TestClient(create_app(_config(), artifact_dir=tmp_path))
     assert client.get("/workbench/artifacts/report.html").status_code == 200
     assert client.get("/workbench/artifacts/../secret.html").status_code == 404
+
+
+# ----------------------------- 上传 + project 选择器(#24 / #31) -----------------------------
+
+
+def test_upload_streams_into_project_uploads(tmp_path: Path, monkeypatch) -> None:
+    """裸请求体流式上传落 project uploads/(二进制,免 multipart 依赖)。"""
+    from data_analysis_agent.server.app import create_app
+    from data_analysis_agent.workspace import Project
+
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    Project.init("p1")
+    client = TestClient(create_app(_config()))
+    r = client.post(
+        "/api/upload?project=p1&filename=data.csv",
+        content=b"a,b\n1,2\n",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["filename"] == "data.csv"
+    assert body["size"] == 8
+    assert (tmp_path / "daa/projects/p1/uploads/data.csv").read_bytes() == b"a,b\n1,2\n"
+
+
+def test_upload_rejects_bad_extension(tmp_path: Path, monkeypatch) -> None:
+    from data_analysis_agent.server.app import create_app
+    from data_analysis_agent.workspace import Project
+
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    Project.init("p1")
+    client = TestClient(create_app(_config()))
+    r = client.post(
+        "/api/upload?project=p1&filename=evil.exe",
+        content=b"x",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert r.status_code == 400
+
+
+def test_upload_rejects_traversal_and_unknown_project(tmp_path: Path, monkeypatch) -> None:
+    from data_analysis_agent.server.app import create_app
+    from data_analysis_agent.workspace import Project
+
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    Project.init("p1")
+    client = TestClient(create_app(_config()))
+    r = client.post(
+        "/api/upload?project=p1&filename=../evil.csv",
+        content=b"x",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert r.status_code == 400
+    r2 = client.post(
+        "/api/upload?project=nope&filename=d.csv",
+        content=b"x",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert r2.status_code == 404
+
+
+def test_list_projects(tmp_path: Path, monkeypatch) -> None:
+    from data_analysis_agent.server.app import create_app
+    from data_analysis_agent.workspace import Project
+
+    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
+    Project.init("alpha")
+    Project.init("beta")
+    client = TestClient(create_app(_config()))
+    ids = [p["project_id"] for p in client.get("/api/projects").json()["projects"]]
+    assert ids == ["alpha", "beta"]
