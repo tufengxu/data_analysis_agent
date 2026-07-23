@@ -773,7 +773,12 @@ class HtmlReportTool(Tool):
             gate_doc = ReportDocument.from_dict(document_dict)
         except (TypeError, ValueError, KeyError) as exc:
             return ToolResult(content=f"Failed to parse ReportDocument: {exc}", is_error=True)
-        qa = run_qa(gate_doc, artifact_exists=True, evidence_resolver=self._evidence_resolver)
+        qa = run_qa(
+            gate_doc,
+            artifact_exists=True,
+            evidence_resolver=self._evidence_resolver,
+            chart_options=charts,
+        )
         if qa.readiness is Readiness.DRAFT:
             blockers = [f for f in qa.findings if f.severity is Severity.BLOCKER]
             blurb = "\n".join(
@@ -812,7 +817,12 @@ class HtmlReportTool(Tool):
 
     def _render_v2_page(self, document_dict: dict[str, Any], charts: dict[str, Any]) -> str:
         document = ReportDocument.from_dict(document_dict)
-        qa = run_qa(document, artifact_exists=True, evidence_resolver=self._evidence_resolver)
+        qa = run_qa(
+            document,
+            artifact_exists=True,
+            evidence_resolver=self._evidence_resolver,
+            chart_options=charts,
+        )
         title = html.escape(document.title)
         meta_parts: list[str] = []
         if document.data_scope:
