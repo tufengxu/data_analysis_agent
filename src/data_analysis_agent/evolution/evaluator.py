@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import statistics
 from collections.abc import Callable
@@ -340,9 +341,20 @@ class SkillEvaluator:
         ):
             if skill.name != verdict["skill"]:
                 continue
+            from_status = skill.status
             skill.status = "proposed_promote" if decision == "promote" else "retired"
             skill.eval_score = verdict.get("metrics", {}).get("pass_rate")
-            return save_skill(self.skills_dir, skill.to_dict())
+            saved = save_skill(self.skills_dir, skill.to_dict())
+            _append_skill_ledger(
+                self.skills_dir,
+                skill=skill.name,
+                action="proposed_promote" if decision == "promote" else "eval_retire",
+                from_status=from_status,
+                to_status=skill.status,
+                eval_score=skill.eval_score,
+                metrics=verdict.get("metrics", {}),
+            )
+            return saved
         return None
 
 
@@ -493,6 +505,10 @@ def register_evaluate_cli(subparsers: Any) -> None:
     p_retire.add_argument("name", help="技能名")
     p_retire.set_defaults(func=_cmd_retire)
 
+    p_ledger = subparsers.add_parser("ledger", help="查看技能晋升/退役账本(append-only)")
+    p_ledger.add_argument("name", nargs="?", help="可选:只看某技能")
+    p_ledger.set_defaults(func=_cmd_ledger)
+
 
 def _cmd_evaluate(args: Any) -> int:
     from ..config import AgentConfig
@@ -527,6 +543,68 @@ def _cmd_evaluate(args: Any) -> int:
     return 0
 
 
+def _utc_now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _append_skill_ledger(
+    skills_dir: str | Path,
+    *,
+    skill: str,
+    action: str,
+    from_status: str,
+    to_status: str,
+    eval_score: Any = None,
+    metrics: dict[str, Any] | None = None,
+) -> Path:
+    """Append a promotion/retirement record to ``<skills_dir>/ledger.jsonl``.
+
+    Append-only (mirror of the web feedback log): the skill lifecycle must be
+    auditable — every evaluate proposal, approve, and retire leaves a dated,
+    attributed trace. Only call on a real status transition (no-op idempotence
+    stays silent).
+    """
+    entry = {
+        "skill": skill,
+        "action": action,
+        "from_status": from_status,
+        "to_status": to_status,
+        "eval_score": eval_score,
+        "metrics": metrics or {},
+        "decided_at": _utc_now_iso(),
+        "actor": os.environ.get("USER") or "cli",
+    }
+    ledger = Path(skills_dir) / "ledger.jsonl"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    with ledger.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return ledger
+
+
+def read_skill_ledger(skills_dir: str | Path, name: str | None = None) -> list[dict[str, Any]]:
+    """Read the skill ledger (append-order); optionally filter by skill name.
+
+    Skips blank/corrupt lines rather than raising so a partially-written tail
+    never makes the history unreadable.
+    """
+    ledger = Path(skills_dir) / "ledger.jsonl"
+    if not ledger.is_file():
+        return []
+    out: list[dict[str, Any]] = []
+    for line in ledger.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict) and (name is None or rec.get("skill") == name):
+            out.append(rec)
+    return out
+
+
 def approve_skill(skills_dir: str | Path, name: str) -> int:
     """Human-in-the-loop gate: the ONLY path that writes status=active.
 
@@ -536,8 +614,17 @@ def approve_skill(skills_dir: str | Path, name: str) -> int:
         if skill.name == name:
             if skill.status == "active":
                 return 0
+            from_status = skill.status
             skill.status = "active"
             save_skill(skills_dir, skill.to_dict())
+            _append_skill_ledger(
+                skills_dir,
+                skill=name,
+                action="approve",
+                from_status=from_status,
+                to_status="active",
+                eval_score=getattr(skill, "eval_score", None),
+            )
             return 0
     return 1
 
@@ -553,8 +640,17 @@ def retire_skill(skills_dir: str | Path, name: str) -> int:
         if skill.name == name:
             if skill.status == "retired":
                 return 0
+            from_status = skill.status
             skill.status = "retired"
             save_skill(skills_dir, skill.to_dict())
+            _append_skill_ledger(
+                skills_dir,
+                skill=name,
+                action="retire",
+                from_status=from_status,
+                to_status="retired",
+                eval_score=getattr(skill, "eval_score", None),
+            )
             return 0
     return 1
 
@@ -571,6 +667,25 @@ def _cmd_retire(args: Any) -> int:
     from ..config import AgentConfig
 
     return retire_skill(AgentConfig.from_env().skills_dir(), args.name)
+
+
+def _cmd_ledger(args: Any) -> int:
+    """Print the skill promotion/retirement ledger (optionally filtered by name)."""
+    from ..config import AgentConfig
+
+    name = getattr(args, "name", None)
+    records = read_skill_ledger(AgentConfig.from_env().skills_dir(), name)
+    if not records:
+        print("无账本记录。")
+        return 0
+    for rec in records:
+        print(
+            f"  [{rec.get('decided_at')}] {rec.get('skill')} {rec.get('action')} "
+            f"({rec.get('from_status')}→{rec.get('to_status')}) "
+            f"score={rec.get('eval_score')} by {rec.get('actor')}"
+        )
+    print(f"共 {len(records)} 条。")
+    return 0
 
 
 __all__ = [
