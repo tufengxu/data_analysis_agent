@@ -42,6 +42,35 @@ def test_looks_like_rephrase():
     assert looks_like_rephrase("继续分析下一个区域", gap_seconds=5) is False  # neutral
 
 
+def test_looks_like_rephrase_cjk_variants():
+    # expanded CJK correction/negation variants all fire (gap within window)
+    assert looks_like_rephrase("不准确，重算一下", gap_seconds=5) is True
+    assert looks_like_rephrase("这个有错，重做", gap_seconds=5) is True
+    assert looks_like_rephrase("不正确，改一下", gap_seconds=5) is True
+    assert looks_like_rephrase("再改改这个", gap_seconds=5) is True
+
+
+def test_looks_like_rephrase_cjk_neutral_not_flagged():
+    # ambiguous openers (等等 list-terminator / 应该是 hypothesis) must NOT fire —
+    # they were excluded to keep the false-positive rate down.
+    assert looks_like_rephrase("分析销售额、利润、成本等等", gap_seconds=5) is False
+    assert looks_like_rephrase("原因应该是这个", gap_seconds=5) is False
+    assert looks_like_rephrase("下个月再算吧", gap_seconds=5) is False  # scheduling, not correction
+
+
+def test_looks_like_rephrase_english_word_boundary():
+    # the bare-"no" substring false positive is fixed: "no" inside a word does not fire
+    assert looks_like_rephrase("note this change for me", gap_seconds=5) is False
+    assert looks_like_rephrase("I know the answer already", gap_seconds=5) is False
+    assert looks_like_rephrase("proceed now to the next step", gap_seconds=5) is False
+    # "again" must not fire inside "against"
+    assert looks_like_rephrase("this is against my expectation", gap_seconds=5) is False
+    # but a real standalone correction still fires
+    assert looks_like_rephrase("no, that's wrong", gap_seconds=5) is True
+    assert looks_like_rephrase("try again please", gap_seconds=5) is True
+    assert looks_like_rephrase("nope, not right", gap_seconds=5) is True
+
+
 # --- TrajectoryLogger -------------------------------------------------------
 
 
