@@ -124,6 +124,9 @@ src/data_analysis_agent/causal/report_adapter.py = "因果决策领域层(Stage1
 src/data_analysis_agent/web/app.py = "Web Workbench(Wave8 MVP):FastAPI app + API 端点(need/context/contract/qa/template)+ artifact 安全预览(消费 reporting 纯函数)"
 src/data_analysis_agent/web/schemas.py = "Web Workbench(Wave8):Pydantic 请求模型"
 src/data_analysis_agent/web/__main__.py = "Web Workbench(Wave8):uvicorn 启动入口(data-agent-web)"
+src/data_analysis_agent/server/event_codec.py = "AgentEvent → 稳定 SSE JSON dict 的纯函数映射(roadmap P1-3.5 事件 codec 契约;字段名冻结)"
+src/data_analysis_agent/server/app.py = "FastAPI workbench:/api/run/stream(SSE 跑 runtime 推事件)+ 静态首页;localhost-only,复用 AgentRuntime.from_config"
+src/data_analysis_agent/server/__main__.py = "uvicorn 启动入口(python -m data_analysis_agent.server,强制绑 127.0.0.1)"
 ```
 
 <!-- manifest:end -->
