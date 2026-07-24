@@ -15,7 +15,7 @@ from data_analysis_agent.config import AgentConfig
 def test_main_forwards_repeatable_path_to_run_single(monkeypatch, tmp_path):
     captured: dict[str, object] = {}
 
-    async def fake_run_single(query, config, persist_path, analysis_paths=None):
+    async def fake_run_single(query, config, persist_path, analysis_paths=None, project=None):
         captured["query"] = query
         captured["analysis_paths"] = analysis_paths
 
@@ -34,7 +34,7 @@ def test_main_forwards_repeatable_path_to_run_single(monkeypatch, tmp_path):
 def test_main_without_path_passes_none(monkeypatch, tmp_path):
     captured: dict[str, object] = {}
 
-    async def fake_run_single(query, config, persist_path, analysis_paths=None):
+    async def fake_run_single(query, config, persist_path, analysis_paths=None, project=None):
         captured["analysis_paths"] = analysis_paths
 
     monkeypatch.setattr(cli, "run_single", fake_run_single)
