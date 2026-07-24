@@ -16,6 +16,7 @@ from data_analysis_agent.reporting.model import (
     SourceKind,
     UserNeed,
 )
+from data_analysis_agent.reporting.overlays import apply_overlay
 from data_analysis_agent.reporting.requirement_parser import parse_user_need
 from data_analysis_agent.reporting.templates import select_template
 from data_analysis_agent.reporting.traceability import link_to_contract_fields
@@ -74,6 +75,14 @@ class ReportContractTool(Tool):
                     "description": "Override: business_stakeholder/technical.",
                 },
                 "language": {"type": "string"},
+                "domain": {
+                    "type": "string",
+                    "description": (
+                        "Optional business domain for a domain-specific caveat "
+                        "overlay: retail/saas/finance/operations/risk/marketing. "
+                        "Adds domain-specific required_caveats to the template."
+                    ),
+                },
             },
             "required": ["question"],
         }
@@ -125,6 +134,9 @@ class ReportContractTool(Tool):
             if isinstance(language_override, str) and language_override
             else (user_need.explicit_requirements.language or "auto")
         )
+        domain = _as_optional_str(input_data.get("domain"))
+        if domain:
+            domain = domain.lower()  # normalize so SAAS/SaaS hit the overlay table too
 
         links = link_to_contract_fields(user_need, data_context, process_context)
         field_sources = tuple((lk.target, lk.source) for lk in links)
@@ -153,6 +165,7 @@ class ReportContractTool(Tool):
             data_sources=tuple(tb.path or tb.name for tb in data_context.tables),
             dimensions=tuple(data_context.candidate_dimensions),
             business_grain=data_context.business_grain,
+            domain=domain,
             explicit_requirement_refs=tuple(_dedup(refs["explicit_requirement_refs"])),
             implicit_requirement_refs=tuple(_dedup(refs["implicit_requirement_refs"])),
             data_context_refs=tuple(_dedup(refs["data_context_refs"])),
@@ -165,6 +178,11 @@ class ReportContractTool(Tool):
         # required caveat topics for the model to build a conforming ReportDocument.
         # AD_HOC / unknown report_type -> no template (None).
         template = select_template(contract.report_type)
+        if template is not None and domain:
+            # Domain overlay (spec §8): add domain-specific required_caveats to the
+            # template so the model knows which caveats the domain expects. No-op
+            # for unknown domains; pure function, only appends caveat topics.
+            template = apply_overlay(template, domain)
         meta: dict[str, Any] = {"contract": contract.to_dict()}
         if template is not None:
             meta["template"] = template.to_dict()
@@ -207,6 +225,14 @@ def _dedup(seq: list[str]) -> list[str]:
             seen.add(x)
             out.append(x)
     return out
+
+
+def _as_optional_str(value: Any) -> str | None:
+    """Coerce to a stripped non-empty string, else None."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
 
 
 def _render(contract: ReportContract, template: Any = None) -> str:
