@@ -268,6 +268,53 @@ def _text_to_html(text: str) -> str:
     return "\n".join("<p>" + html.escape(p).replace("\n", "<br>") + "</p>" for p in paragraphs)
 
 
+# Refs that PURPORT to be a resolvable artifact file: absolute path, or a name
+# with a known artifact extension. Descriptive free-text refs ("Q3 revenue")
+# are NOT in this set — they cannot be verified and must not be penalized.
+_ARTIFACT_EXTS = frozenset(
+    {".json", ".png", ".jpg", ".jpeg", ".svg", ".html", ".htm", ".csv", ".tsv", ".xlsx", ".parquet"}
+)
+
+
+def _looks_like_artifact_ref(ref: str) -> bool:
+    p = Path(ref)
+    return p.is_absolute() or p.suffix.lower() in _ARTIFACT_EXTS
+
+
+def _build_evidence_resolver(result_store: Any, artifact_dir: Path) -> Any:
+    """Build a (ref -> True|False|None) resolver for QA's evidence-ref check.
+
+    True  = resolved to a known result_id or an existing artifact file.
+    False = ref purports to be an artifact file (by shape) but is not a real
+            artifact under ``artifact_dir`` → fabricated traceability.
+    None  = descriptive free text — cannot verify, do not penalize.
+
+    File resolution is confined to the ``artifact_dir`` subtree: a ref that
+    escapes it (``/etc/hosts``, ``../x.json``) returns False WITHOUT an existence
+    check, so the resolver is not a file-existence oracle for arbitrary paths and
+    system files cannot pose as evidence.
+    """
+    base = Path(artifact_dir).resolve()
+
+    def resolver(ref: str) -> bool | None:
+        if result_store is not None:
+            try:
+                if result_store.contains(ref):
+                    return True
+            except Exception:
+                # A store hiccup must never block the report; treat as not-found
+                # for the result_id path and keep checking the file path.
+                pass
+        if _looks_like_artifact_ref(ref):
+            candidate = (base / ref).resolve()
+            if not candidate.is_relative_to(base):
+                return False  # escapes artifact_dir → not a legitimate artifact
+            return candidate.exists()
+        return None
+
+    return resolver
+
+
 class HtmlReportTool(Tool):
     """Render a structured analysis report into a self-contained H5 HTML file."""
 
@@ -275,12 +322,15 @@ class HtmlReportTool(Tool):
         self,
         artifact_dir: str | Path | None = None,
         echarts_src: str = DEFAULT_ECHARTS_SRC,
+        result_store: Any = None,
     ) -> None:
         if artifact_dir is None:
             artifact_dir = Path(tempfile.mkdtemp(prefix="daa_reports_"))
         self.artifact_dir = Path(artifact_dir).expanduser().resolve()
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
         self.echarts_src = echarts_src
+        self.result_store = result_store
+        self._evidence_resolver = _build_evidence_resolver(result_store, self.artifact_dir)
 
     @property
     def name(self) -> str:
@@ -723,7 +773,7 @@ class HtmlReportTool(Tool):
             gate_doc = ReportDocument.from_dict(document_dict)
         except (TypeError, ValueError, KeyError) as exc:
             return ToolResult(content=f"Failed to parse ReportDocument: {exc}", is_error=True)
-        qa = run_qa(gate_doc, artifact_exists=True)
+        qa = run_qa(gate_doc, artifact_exists=True, evidence_resolver=self._evidence_resolver)
         if qa.readiness is Readiness.DRAFT:
             blockers = [f for f in qa.findings if f.severity is Severity.BLOCKER]
             blurb = "\n".join(
@@ -762,7 +812,7 @@ class HtmlReportTool(Tool):
 
     def _render_v2_page(self, document_dict: dict[str, Any], charts: dict[str, Any]) -> str:
         document = ReportDocument.from_dict(document_dict)
-        qa = run_qa(document, artifact_exists=True)
+        qa = run_qa(document, artifact_exists=True, evidence_resolver=self._evidence_resolver)
         title = html.escape(document.title)
         meta_parts: list[str] = []
         if document.data_scope:
