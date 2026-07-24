@@ -45,6 +45,7 @@ class ContinueReason(Enum):
     REACTIVE_COMPACT_RETRY = auto()  # 413 recovery: fork sub-agent to summarize
     MAX_OUTPUT_TOKENS_ESCALATE = auto()  # 8K -> 64K escalation
     MAX_OUTPUT_TOKENS_RECOVERY = auto()  # Inject recovery message after 64K truncate
+    TRANSIENT_RETRY = auto()  # 429/timeout/overloaded: bounded loop-level backoff retry
     STOP_HOOK_BLOCKING = auto()  # Stop hooks vetoed termination
     TOKEN_BUDGET_CONTINUATION = auto()  # Nudge model to continue within budget
 
@@ -99,6 +100,7 @@ class AgentState:
     max_output_tokens_override: int | None = None
     max_output_tokens_recovery_count: int = 0
     has_attempted_reactive_compact: bool = False
+    transient_recovery_count: int = 0
     stop_hook_active: bool = False
 
     # --- Immutable update helpers ---
@@ -120,6 +122,9 @@ class AgentState:
 
     def with_has_attempted_reactive_compact(self, value: bool) -> AgentState:
         return self._replace(has_attempted_reactive_compact=value)
+
+    def with_transient_recovery_count(self, value: int) -> AgentState:
+        return self._replace(transient_recovery_count=value)
 
     def with_stop_hook_active(self, value: bool) -> AgentState:
         return self._replace(stop_hook_active=value)

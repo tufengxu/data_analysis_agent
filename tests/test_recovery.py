@@ -71,8 +71,14 @@ class _FakeClient:
         return _Resp([TextBlock(text=self._text or "")])
 
 
-def _policy(compressor, client=None, max_tokens=8192):
-    return RecoveryPolicy(compressor, client or _FakeClient(), max_tokens)
+def _policy(compressor, client=None, max_tokens=8192, sleep=None):
+    kw = {} if sleep is None else {"sleep": sleep}
+    return RecoveryPolicy(compressor, client or _FakeClient(), max_tokens, **kw)
+
+
+async def _no_sleep(_delay: float) -> None:
+    """No-op sleep for fast transient-retry tests (avoids real backoff)."""
+    return None
 
 
 def _state(**kw):
@@ -114,12 +120,50 @@ async def test_attempt_recovery_gives_up_after_reactive_already_attempted():
     assert not compressor.forced
 
 
-async def test_attempt_recovery_ignores_non_length_errors():
+async def test_attempt_recovery_retries_transient_errors():
+    # A transient API error (429/timeout/overloaded, is_recoverable) is NOT
+    # ignored — it gets a bounded loop-level backoff retry (TRANSIENT_RETRY),
+    # distinct from the prompt-too-long compact path (no drain/force).
     compressor = _FakeCompressor(staged=[1])
-    policy = _policy(compressor)
-    out = await policy.attempt_recovery(_state(), AnthropicClientError("rate limit exceeded"))
-    assert out is None
+    policy = _policy(compressor, sleep=_no_sleep)
+    out = await policy.attempt_recovery(
+        _state(), AnthropicClientError("API error: rate limit exceeded")
+    )
+    assert out is not None
+    assert out.transition == ContinueReason.TRANSIENT_RETRY
+    assert out.transient_recovery_count == 1
     assert not compressor.drained and not compressor.forced
+
+
+async def test_attempt_recovery_transient_gives_up_after_limit():
+    # After TRANSIENT_RECOVERY_LIMIT retries, a transient error gives up (None).
+    policy = _policy(_FakeCompressor(), sleep=_no_sleep)
+    out = await policy.attempt_recovery(
+        _state(transient_recovery_count=RecoveryPolicy.TRANSIENT_RECOVERY_LIMIT),
+        AnthropicClientError("API error: request timed out"),
+    )
+    assert out is None
+
+
+async def test_attempt_recovery_transient_backoff_grows():
+    # backoff delay grows exponentially (1, 2, 4, ...) — verify the policy asks
+    # the injected sleep for increasing delays across retries.
+    delays: list[float] = []
+
+    async def _record(delay: float) -> None:
+        delays.append(delay)
+
+    policy = _policy(_FakeCompressor(), sleep=_record)
+    state = _state()
+    for _ in range(RecoveryPolicy.TRANSIENT_RECOVERY_LIMIT):
+        out = await policy.attempt_recovery(
+            state, AnthropicClientError("API error: 503 overloaded")
+        )
+        assert out is not None
+        state = out
+    assert delays == [1, 2, 4]
+    # one more → exhausted → None
+    assert await policy.attempt_recovery(state, AnthropicClientError("API error: 503")) is None
 
 
 # --- handle_max_tokens: escalate → bounded retries → give up ----------------
