@@ -12,6 +12,7 @@ from .experiment_readout import ExperimentReadoutTool
 from .file_read import FileReadTool
 from .html_report import HtmlReportTool
 from .join_planner import JoinPlannerTool
+from .metric_contract import MetricContractTool
 from .nl_query import NlQueryTool
 from .python_exec import PythonAnalysisTool
 from .registry import ToolRegistry
@@ -33,6 +34,7 @@ __all__ = [
     "FileReadTool",
     "HtmlReportTool",
     "JoinPlannerTool",
+    "MetricContractTool",
     "NlQueryTool",
     "PermissionResult",
     "PythonAnalysisTool",
