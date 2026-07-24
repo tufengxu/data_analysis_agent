@@ -11,7 +11,7 @@ lighter agent than production" drift.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +78,11 @@ READ_ONLY_TOOLS = (
     "causal_action_plan",
     "causal_report",
 )
+
+# Mutating/state-changing tools: ASK'd under the local_safe preset (vs. DENY for
+# unknown). Every built-in tool must be in READ_ONLY_TOOLS or MUTATOR_TOOLS, or
+# local_safe will silently deny it — see test_safety_baseline classification test.
+MUTATOR_TOOLS = ("python_analysis", "visualization", "html_report", "chart_render")
 
 
 def build_message_store(persist_path: str | Path | None) -> MessageStore | None:
@@ -155,12 +160,29 @@ def build_skill_registry(
 def build_permission_engine(config: AgentConfig) -> PermissionEngine | None:
     """Build permission rules from runtime configuration.
 
+    Named presets take precedence over mode/deny_patterns:
+    - ``local_safe``: deny-by-default. Read-only tools allowed, known mutators
+      ask, unknown tools denied. Intended as the Web workbench default.
+    - ``local_dev``: CLI-friendly, no engine, everything allowed (today's default).
+
     Default mode without deny rules preserves the non-interactive CLI behavior
     (no engine). Once permission config is present the engine is genuinely
     deny-first: read-only tools are allowed, everything else falls through to
     the engine's default ASK — answered by the approval handler when one is
     configured, denied otherwise. AUTO mode auto-approves by definition.
     """
+    if config.permission_preset == "local_safe":
+        engine = PermissionEngine(
+            mode=PermissionMode.DEFAULT, default_behavior=PermissionBehavior.DENY
+        )
+        for name in READ_ONLY_TOOLS:
+            engine.add_rule(PermissionRule(name, PermissionBehavior.ALLOW))
+        for name in MUTATOR_TOOLS:
+            engine.add_rule(PermissionRule(name, PermissionBehavior.ASK))
+        return engine
+    if config.permission_preset == "local_dev":
+        return None
+
     mode_map = {
         "default": PermissionMode.DEFAULT,
         "plan": PermissionMode.PLAN,
@@ -232,6 +254,7 @@ class AgentRuntime:
     memory_injector: MemoryInjector | None = None
     project: Project | None = None
     run_id: str | None = None
+    sensitive_mode: bool = False
 
     async def shutdown(self) -> None:
         if self.kernel is not None:
@@ -256,6 +279,11 @@ class AgentRuntime:
         workspace / results / message store) is routed under the project root and a
         fresh ``run_id`` is allocated; otherwise behaviour is unchanged.
         """
+        if config.sensitive_mode:
+            # Suppress privacy-relevant capture for this run: no memory writes and
+            # no trajectory input capture (telemetry still records tool name /
+            # duration). Rebind locally so the rest of from_config sees the override.
+            config = replace(config, enable_memory=False, enable_trajectory_inputs=False)
         loop_config = AgentLoopConfig(
             system_prompt=config.system_prompt,
             max_turns=config.max_turns,
@@ -280,6 +308,10 @@ class AgentRuntime:
         else:
             artifacts_dir = config.artifacts_dir(persist_path)
             result_store = config.result_store(persist_path)
+        if config.sensitive_mode:
+            # Sensitive run: do not persist the conversation — the message store
+            # would otherwise write every user/assistant message to disk.
+            effective_persist_path = None
         kernel: KernelManager | None = None
         if config.persistent_kernel:
             # Non-project: resolve lazily HERE so persistent_kernel=False does not
@@ -343,4 +375,5 @@ class AgentRuntime:
             memory_injector=injector,
             project=project,
             run_id=run_id,
+            sensitive_mode=config.sensitive_mode,
         )

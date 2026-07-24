@@ -207,12 +207,14 @@ def _record_run(
         return None
     usage = stats["token_usage"]
     token_usage = usage if (usage["input_tokens"] or usage["output_tokens"]) else None
+    # Sensitive run: never write the raw user query into the manifest.
+    request_text = "<redacted: sensitive-mode>" if runtime.sensitive_mode else request
     run = RunManifest(
         run_id=runtime.run_id,
         project_id=runtime.project.project_id,
         started_at=started_at,
         finished_at=finished_at,
-        request=request,
+        request=request_text,
         authorized_paths=[str(p) for p in (authorized_paths or [])],
         session_id=runtime.session.meta.session_id,
         event_counts=stats["event_counts"],
@@ -540,6 +542,16 @@ def main() -> None:
     parser.add_argument("--config", "-c", help="Path to config file")
     parser.add_argument("--model", "-m", help="Model ID")
     parser.add_argument("--max-turns", type=int, help="Maximum turns")
+    parser.add_argument(
+        "--preset",
+        choices=["local_safe", "local_dev"],
+        help="Permission preset: local_safe (deny-by-default) or local_dev (CLI-friendly)",
+    )
+    parser.add_argument(
+        "--sensitive",
+        action="store_true",
+        help="Sensitive mode: suppress memory writes and trajectory input capture this run",
+    )
     parser.add_argument("--interactive", "-i", action="store_true", help="Interactive mode")
     parser.add_argument("--persist", "-p", help="Path to JSONL message store")
     parser.add_argument(
@@ -571,6 +583,10 @@ def main() -> None:
         config.model = args.model
     if args.max_turns:
         config.max_turns = args.max_turns
+    if args.preset:
+        config.permission_preset = args.preset
+    if args.sensitive:
+        config.sensitive_mode = True
 
     project: Project | None = None
     try:
