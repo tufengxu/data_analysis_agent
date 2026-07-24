@@ -49,12 +49,20 @@ def encode(event: AgentEvent) -> dict[str, Any]:
             "artifacts": list(event.artifacts),
         }
     if isinstance(event, StateChangeEvent):
-        return {
+        frame: dict[str, Any] = {
             "type": "state_change",
             "previous_state": event.previous_state,
             "new_state": event.new_state,
             "reason": event.reason,
         }
+        # Additive (wire contract: new fields only). approval_ui() attaches these so
+        # the browser can render the AWAITING_CONFIRMATION modal without parsing the
+        # human-readable reason string. Absent on non-approval transitions.
+        payload = getattr(event, "approval_payload", None)
+        if payload:
+            frame["tool_name"] = payload.get("tool_name")
+            frame["parameters"] = payload.get("parameters")
+        return frame
     if isinstance(event, UsageEvent):
         return {
             "type": "usage",
