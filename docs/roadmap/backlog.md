@@ -59,7 +59,10 @@
       8 flag + 全量读+1M cap+truncation + file-only（与 data_profile 结构发现互补）。三轮独立审查收敛（0/0）。
       跟进（minor，advisory）：① 0/1 编码整数列（CSV 里的语义布尔 is_vip 等）仍触发 `high_outliers`
       ——难与合法 0/1 数值区分，启发式两难；② 单行表退化情形每列标 `constant`（n_rows>1 门可收紧）。
-- [ ] P1-4.2 `join_planner`
+- [x] P1-4.2 `join_planner` — ✅ PR #15（feat/join-planner）。多文件/多 sheet 跨表只读 join 顾问：
+      候选键(同名列)/唯一性→关系(1:1/1:N/N:1/N:N)/值覆盖/估算连接行数/行乘积风险(high iff N:N)/
+      null-key 风险/推荐顺序(大表为锚，优先入端 unique)。两轮独立审查收敛 0/0。
+      跟进（minor）：跨名值重叠(cust_id↔id)与 case-insensitive 匹配（更模糊，留 follow-up）。
 - [ ] P1-4.3 `metric_contract` 工具
 - [ ] P1-4.6 nl_query schema-aware 升级（部分）
 - [ ] P1-4.7 Excel 多表工作流（部分）
