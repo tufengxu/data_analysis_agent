@@ -56,6 +56,7 @@ src/data_analysis_agent/kernel/kernel_main.py = "内核沙箱侧 REPL(自包含,
 src/data_analysis_agent/state_machine.py = "不可变状态容器、ContinueReason、TerminalReason"
 src/data_analysis_agent/events.py = "异步事件流类型(流式文本/工具/状态变更)"
 src/data_analysis_agent/config.py = "AgentConfig 加载合并 + sampling_config() 构造"
+src/data_analysis_agent/doctor.py = "doctor 健康检查:API key / data extras / DAA_HOME 可写 / ~/.daa 各子目录磁盘用量 / ECharts 模式 / 权限预设 / kernel python / Web 端口的 pass/warn/fail 只读报告(P1-1.7)"
 src/data_analysis_agent/persistence.py = "append-only JSONL 消息存储 + session fork(组合 JsonlStore)"
 src/data_analysis_agent/jsonl_store.py = "JsonlStore primitive:原子重写 + 读容错 + 只读降级(纯 stdlib 叶子)"
 src/data_analysis_agent/workspace.py = "Project/ProjectManifest/RunManifest:本地项目工作区,把一次 run 的 session 态产物(artifact/kernel/results/messages)统一到同一根 + project/run 清单(原子写,opt-in;trajectories/memory/skills 仍走全局 ~/.daa,P1-2)"
