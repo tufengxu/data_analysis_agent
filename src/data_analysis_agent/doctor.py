@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import contextlib
 import os
-import shutil
 import socket
+import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,18 +40,42 @@ class CheckResult:
 
 
 def check_all(config: AgentConfig | None = None) -> list[CheckResult]:
-    """Run every doctor check against the given (or env-derived) config."""
+    """Run every doctor check against the given (or env-derived) config.
+
+    Each check is fault-isolated: a check that raises (rather than returning a
+    CheckResult) is degraded to a FAIL for that check alone, so one buggy or
+    environment-sensitive check never aborts the whole report.
+    """
     config = config or AgentConfig.from_env()
-    return [
-        _check_api_key(config),
-        _check_data_extras(),
-        _check_daa_home(config),
-        *_check_disk_usage(config),
-        _check_echarts(config),
-        _check_permission(config),
-        _check_kernel_python(),
-        _check_web_port(),
+    checks: list[tuple[str, Callable[[], list[CheckResult]]]] = [
+        ("API key", lambda: [_check_api_key(config)]),
+        ("Data extras", _check_data_extras_list),
+        ("DAA_HOME writable", lambda: [_check_daa_home(config)]),
+        ("disk", lambda: _check_disk_usage(config)),
+        ("ECharts", lambda: [_check_echarts(config)]),
+        ("Permission", lambda: [_check_permission(config)]),
+        ("Kernel python", _check_kernel_python_list),
+        ("Web port", _check_web_port_list),
     ]
+    results: list[CheckResult] = []
+    for name, run in checks:
+        try:
+            results.extend(run())
+        except Exception as exc:  # never abort the report (see module docstring)
+            results.append(CheckResult(name, FAIL, f"check raised unexpectedly: {exc!r}"))
+    return results
+
+
+def _check_data_extras_list() -> list[CheckResult]:
+    return [_check_data_extras()]
+
+
+def _check_kernel_python_list() -> list[CheckResult]:
+    return [_check_kernel_python()]
+
+
+def _check_web_port_list() -> list[CheckResult]:
+    return [_check_web_port()]
 
 
 def _check_api_key(config: AgentConfig) -> CheckResult:
@@ -133,11 +158,17 @@ def _check_permission(config: AgentConfig) -> CheckResult:
 
 
 def _check_kernel_python() -> CheckResult:
-    python = shutil.which("python3") or shutil.which("python")
-    if python:
-        return CheckResult("Kernel python", PASS, f"found {python}")
+    # The kernel spawns its subprocess with sys.executable (kernel/manager.py),
+    # so the check must probe THAT interpreter — not whatever `python3` happens
+    # to be on PATH, which can differ from the running one and report a
+    # misleading PASS.
+    python = sys.executable
+    if python and Path(python).exists():
+        return CheckResult("Kernel python", PASS, f"kernel will use sys.executable: {python}")
     return CheckResult(
-        "Kernel python", FAIL, "no python3/python on PATH; persistent kernel cannot start."
+        "Kernel python",
+        FAIL,
+        f"sys.executable not found on disk: {python!r}; persistent kernel cannot start.",
     )
 
 
