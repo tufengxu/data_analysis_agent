@@ -280,7 +280,9 @@ async def test_csv_with_credentialed_url_uses_env_not_inlined():
 async def test_parquet_with_credentialed_url_uses_env_not_inlined():
     tool = NlQueryTool()
     secret = "https://bob:hunter2@host/data.parquet"
-    result = await tool.call({"query": "show rows", "data_source": secret, "source_type": "parquet"})
+    result = await tool.call(
+        {"query": "show rows", "data_source": secret, "source_type": "parquet"}
+    )
     code = result.metadata["generated_code"]
     assert "hunter2" not in code
     assert "os.environ['DATA_SOURCE_URL']" in code
@@ -300,7 +302,9 @@ async def test_dataframe_with_credentialed_label_not_inlined():
 async def test_csv_without_credentials_still_verbatim():
     """Backward compat: a plain path is inlined as before, no env indirection."""
     tool = NlQueryTool()
-    result = await tool.call({"query": "show rows", "data_source": "/data/x.csv", "source_type": "csv"})
+    result = await tool.call(
+        {"query": "show rows", "data_source": "/data/x.csv", "source_type": "csv"}
+    )
     code = result.metadata["generated_code"]
     assert "pd.read_csv(r'/data/x.csv')" in code
     assert result.metadata["warnings"] == []
