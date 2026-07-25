@@ -60,6 +60,10 @@ class AgentConfig:
     # Permission settings
     permission_mode: str = "default"  # default | plan | auto | bypass
     deny_patterns: list[str] = field(default_factory=list)
+    # Named permission preset (overrides mode/deny when set): "" | local_safe | local_dev.
+    # local_safe = read-only allow, known mutators ask, unknown deny (Web default).
+    # local_dev  = CLI-friendly, no engine, everything allowed (today's default).
+    permission_preset: str = ""
 
     # Context management
     context_budget_tokens: int = 180_000
@@ -95,6 +99,14 @@ class AgentConfig:
     # code skeletons) so the synthesizer can learn reusable recipes. Off → only
     # tool name / duration / result_chars are recorded (privacy-preserving).
     enable_trajectory_inputs: bool = True
+
+    # Sensitive mode: opt-in per-run privacy switch. Forces enable_memory=False
+    # and enable_trajectory_inputs=False AND suppresses the session store + the
+    # run manifest's request field, so nothing user-input-shaped is written to
+    # ~/.daa this run (telemetry still records tool name/duration). Covers user-
+    # input paths only — computed tool output (ResultStore/artifacts) may still
+    # echo input data and is redaction-pending; see docs/roadmap/backlog.md.
+    sensitive_mode: bool = False
 
     def artifacts_dir(self, persist_path: str | Path | None = None) -> Path:
         """Directory for user-facing artifacts (charts); follows persist_path."""

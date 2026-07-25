@@ -45,6 +45,12 @@
 - [ ] project add_run 的 runs 索引并发安全（当前 read-modify-write，两并发 CLI 可能丢索引项；原子写防损坏但不防丢失）
 - [ ] interactive 模式一次调用共享一个 run_id（一 manifest/调用，非一 manifest/turn）：Slice 1 设计取舍
 
+## Wave 1 Slice 2a 已知跟进项（独立审查 minor + 诚实范围）
+
+- [ ] ResultStore / artifact 输出含敏感数据：sensitive-mode 只抑制"用户输入形"捕获（轨迹 input、manifest request、session 消息），不净化计算产物（python 输出可能回显输入）。需 output redaction。
+- [ ] `local_safe` + Web 调用方必须接 approval handler，否则所有 mutator 被 fail-closed 拒绝（Wave 2 Web 实现时注意，spec 注记）。
+- [ ] 主动 PII scrubbing（当前是"不捕获"，非"净化"）。
+
 ## 支线（穿插，不阻塞主线）
 
 ### P1-4 数据分析工具硬化（缺口）

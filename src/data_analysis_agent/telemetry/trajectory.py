@@ -251,18 +251,24 @@ class TrajectoryLogger:
                 "output": estimate_tokens(self._final_text),
                 "estimated": True,
             }
+        # When input capture is off (privacy / sensitive mode), do not persist the
+        # raw user prompt or model final text — only structural telemetry. The
+        # in-memory values are still used above for token estimation (a count, not
+        # the text itself).
+        user_input = self._user_input if self._enable_inputs else ""
+        final_text_digest = self._final_text[:_DIGEST_CHARS] if self._enable_inputs else ""
         record = TurnRecord(
             session_id=self.session_id,
             turn_id=self._turn_id,
             ts_start=self._ts_start,
             ts_end=_utc_now(),
-            user_input=self._user_input,
+            user_input=user_input,
             active_skill=self._active_skill,
             tool_calls=list(self._tool_calls),
             terminal_reason=self._terminal,
             model_turns=self._model_turns,
             tokens=tokens,
-            final_text_digest=self._final_text[:_DIGEST_CHARS],
+            final_text_digest=final_text_digest,
             feedback=feedback,
         )
         self._flush(record)
