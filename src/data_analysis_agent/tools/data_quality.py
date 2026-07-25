@@ -284,12 +284,17 @@ def _read_delimited(path: Path, sep: str) -> tuple[Any, bool]:
 
 
 def _capped_parquet_df(path: Path, max_rows: int) -> tuple[Any, bool]:
-    """Read a parquet file via pyarrow row-groups, capped at ``max_rows``.
+    """Read a parquet file capped at ``max_rows`` via STREAMING batches.
 
-    Returns ``(df, truncated)``. Isolated here (rather than inlined) so the cap
-    loop can be exercised with a stubbed pyarrow — pandas resolves its parquet
-    engine too aggressively for a sys.modules shim to be safe. ImportError for
-    a missing pyarrow propagates to ``_read_parquet``'s fallback.
+    Returns ``(df, truncated)``. Uses ``ParquetFile.iter_batches`` rather than
+    ``read_row_group`` because the latter materializes an ENTIRE row group in
+    memory before any slicing — and a single-row-group file (the pandas
+    ``to_parquet`` default) would then defeat the OOM guard the cap exists to
+    provide. Streaming bounds peak memory to ~one batch. Isolated here (rather
+    than inlined) so the cap loop can be exercised with a stubbed pyarrow —
+    pandas resolves its parquet engine too aggressively for a sys.modules shim
+    to be safe. ImportError for a missing pyarrow propagates to
+    ``_read_parquet``'s fallback.
     """
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -298,19 +303,20 @@ def _capped_parquet_df(path: Path, max_rows: int) -> tuple[Any, bool]:
     truncated = parquet.metadata.num_rows > max_rows
     tables = []
     remaining = max_rows
-    for i in range(parquet.metadata.num_row_groups):
+    # iter_batches streams RecordBatches (bounded by batch_size) instead of
+    # loading whole row groups, so a huge single-row-group file stays capped.
+    for batch in parquet.iter_batches(batch_size=min(max_rows, 65_536)):
         if remaining <= 0:
             break
-        row_group = parquet.read_row_group(i)
-        if row_group.num_rows > remaining:
-            row_group = row_group.slice(0, remaining)
-        tables.append(row_group)
-        remaining -= row_group.num_rows
+        if batch.num_rows > remaining:
+            batch = batch.slice(0, remaining)
+        tables.append(batch)
+        remaining -= batch.num_rows
     if not tables:
         import pandas as pd
 
         return pd.DataFrame(), truncated
-    combined = tables[0] if len(tables) == 1 else pa.concat_tables(tables)
+    combined = pa.concat_tables(tables) if len(tables) > 1 else pa.Table.from_batches(tables)
     return combined.to_pandas(), truncated
 
 

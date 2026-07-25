@@ -426,7 +426,7 @@ def test_read_parquet_uses_capped_reader_and_falls_back(monkeypatch):
 
 
 def _rg(df):
-    """A minimal row-group stand-in (slice/to_pandas/num_rows)."""
+    """A minimal RecordBatch/Table stand-in (slice/to_pandas/num_rows)."""
 
     class _RG:
         def __init__(self, frame):
@@ -442,73 +442,83 @@ def _rg(df):
     return _RG(df)
 
 
-def test_capped_parquet_df_caps_across_row_groups(monkeypatch):
-    """The cap loop stops at max_rows across row-group boundaries."""
-    pd = pytest.importorskip("pandas")
-
-    class _Meta:
-        num_rows = 25
-        num_row_groups = 3
-
-    rgs = [
-        _rg(pd.DataFrame({"a": range(8)})),
-        _rg(pd.DataFrame({"a": range(9)})),
-        _rg(pd.DataFrame({"a": range(8)})),
-    ]
-
-    class _PF:
-        metadata = _Meta()
-
-        def read_row_group(self, i):
-            return rgs[i]
-
-    import sys
+def _pa_pq_shims(batches):
+    """Build (pyarrow, pyarrow.parquet) module shims that stream ``batches``."""
     import types
+
+    import pandas as pd
 
     pa = types.ModuleType("pyarrow")
     pa.concat_tables = lambda tables: _rg(
         pd.concat([t._df for t in tables], ignore_index=True)
     )
+    table_mod = types.SimpleNamespace(
+        from_batches=lambda bs: _rg(pd.concat([b._df for b in bs], ignore_index=True))
+    )
+    pa.Table = table_mod
+
+    class _PF:
+        metadata = types.SimpleNamespace(num_rows=sum(b.num_rows for b in batches))
+
+        def iter_batches(self, batch_size):
+            return iter(batches)
+
     pq = types.ModuleType("pyarrow.parquet")
     pq.ParquetFile = lambda path: _PF()
     pa.parquet = pq
+    return pa, pq
+
+
+def test_capped_parquet_df_caps_across_row_groups(monkeypatch):
+    """The cap loop stops at max_rows across streamed batch boundaries."""
+    pd = pytest.importorskip("pandas")
+    import sys
+
+    batches = [
+        _rg(pd.DataFrame({"a": range(8)})),
+        _rg(pd.DataFrame({"a": range(9)})),
+        _rg(pd.DataFrame({"a": range(8)})),
+    ]
+    pa, pq = _pa_pq_shims(batches)
     monkeypatch.setitem(sys.modules, "pyarrow", pa)
     monkeypatch.setitem(sys.modules, "pyarrow.parquet", pq)
 
     df, truncated = dq._capped_parquet_df("fake.parquet", 10)
     assert truncated is True
-    assert len(df) == 10  # 8 + 2 (second group sliced)
+    assert len(df) == 10  # 8 + 2 (second batch sliced)
 
 
 def test_capped_parquet_df_under_cap_reads_all(monkeypatch):
     """Under the cap the full table is read and not flagged."""
     pd = pytest.importorskip("pandas")
-
-    class _Meta:
-        num_rows = 4
-        num_row_groups = 1
-
-    rgs = [_rg(pd.DataFrame({"a": range(4)}))]
-
-    class _PF:
-        metadata = _Meta()
-
-        def read_row_group(self, i):
-            return rgs[i]
-
     import sys
-    import types
 
-    pa = types.ModuleType("pyarrow")
-    pq = types.ModuleType("pyarrow.parquet")
-    pq.ParquetFile = lambda path: _PF()
-    pa.parquet = pq
+    batches = [_rg(pd.DataFrame({"a": range(4)}))]
+    pa, pq = _pa_pq_shims(batches)
     monkeypatch.setitem(sys.modules, "pyarrow", pa)
     monkeypatch.setitem(sys.modules, "pyarrow.parquet", pq)
 
     df, truncated = dq._capped_parquet_df("fake.parquet", 10)
     assert truncated is False
     assert len(df) == 4
+
+
+def test_capped_parquet_df_single_oversized_batch_stays_capped(monkeypatch):
+    """A single huge 'row group' (the pandas to_parquet default) must NOT be
+    fully materialized: the streaming loop caps it at max_rows (review MAJOR)."""
+    pd = pytest.importorskip("pandas")
+    import sys
+
+    # one batch far over the cap — iter_batches semantics mean the engine yields
+    # bounded chunks, but even a single oversized yielded batch is sliced.
+    batches = [_rg(pd.DataFrame({"a": range(1000)}))]
+    pa, pq = _pa_pq_shims(batches)
+    monkeypatch.setitem(sys.modules, "pyarrow", pa)
+    monkeypatch.setitem(sys.modules, "pyarrow.parquet", pq)
+
+    df, truncated = dq._capped_parquet_df("fake.parquet", 10)
+    assert truncated is True
+    assert len(df) == 10
 
 
 async def test_parquet_over_cap_is_truncated_end_to_end(tmp_path, monkeypatch):
