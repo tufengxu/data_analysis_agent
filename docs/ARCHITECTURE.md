@@ -68,6 +68,7 @@ src/data_analysis_agent/tools/registry.py = "工具注册/过滤/装配(3 阶段
 src/data_analysis_agent/tools/file_read.py = "按 offset/limit 读文件"
 src/data_analysis_agent/tools/data_profile.py = "只读数据画像:文件/目录结构发现(CSV/TSV/Parquet/Excel 多 sheet),供发现 sheet 与跨文件连接键(路径白名单)"
 src/data_analysis_agent/tools/data_quality.py = "只读数据质量检查:单文件缺失/重复行/唯一性/常量列/数值离群(IQR)/类型异常(数字·日期存文本),与 data_profile 结构发现互补(路径白名单)"
+src/data_analysis_agent/tools/join_planner.py = "只读跨表 join 顾问:多文件/多 sheet → 候选键(同名列)/唯一性→关系(1:1/1:N/N:1/N:N)/值覆盖/估算连接行数/行乘积风险/null-key 风险/推荐连接顺序(大表为锚,优先入端 unique),与 data_profile+data_quality 互补(路径白名单)"
 src/data_analysis_agent/tools/python_exec.py = "受限子进程执行 + 采样摘要注入"
 src/data_analysis_agent/tools/nl_query.py = "自然语言 → pandas/SQL 代码生成"
 src/data_analysis_agent/tools/visualization.py = "matplotlib/seaborn/plotly 图表生成"

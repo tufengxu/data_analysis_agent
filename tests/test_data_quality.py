@@ -574,6 +574,7 @@ async def test_parquet_over_cap_is_truncated_end_to_end(tmp_path, monkeypatch):
     pd = pytest.importorskip("pandas")
     pytest.importorskip("pyarrow")  # needs a real engine to WRITE the fixture
     import pyarrow  # noqa: F401 — confirm a usable engine, not a leftover shim
+
     monkeypatch.setattr(dq, "_MAX_ROWS", 3)
     df = pd.DataFrame({"a": range(9)})
     pq_path = tmp_path / "big.parquet"
