@@ -290,7 +290,8 @@ def _capped_parquet_df(path: Path, max_rows: int) -> tuple[Any, bool]:
     ``read_row_group`` because the latter materializes an ENTIRE row group in
     memory before any slicing — and a single-row-group file (the pandas
     ``to_parquet`` default) would then defeat the OOM guard the cap exists to
-    provide. Streaming bounds peak memory to ~one batch. Isolated here (rather
+    provide. Streaming bounds peak memory to ~the capped dataset plus one batch
+    (the same envelope as the CSV/Excel ``nrows`` reads). Isolated here (rather
     than inlined) so the cap loop can be exercised with a stubbed pyarrow —
     pandas resolves its parquet engine too aggressively for a sys.modules shim
     to be safe. ImportError for a missing pyarrow propagates to
@@ -301,7 +302,7 @@ def _capped_parquet_df(path: Path, max_rows: int) -> tuple[Any, bool]:
 
     parquet = pq.ParquetFile(path)
     truncated = parquet.metadata.num_rows > max_rows
-    tables = []
+    batches = []
     remaining = max_rows
     # iter_batches streams RecordBatches (bounded by batch_size) instead of
     # loading whole row groups, so a huge single-row-group file stays capped.
@@ -310,13 +311,17 @@ def _capped_parquet_df(path: Path, max_rows: int) -> tuple[Any, bool]:
             break
         if batch.num_rows > remaining:
             batch = batch.slice(0, remaining)
-        tables.append(batch)
+        batches.append(batch)
         remaining -= batch.num_rows
-    if not tables:
-        import pandas as pd
-
-        return pd.DataFrame(), truncated
-    combined = pa.concat_tables(tables) if len(tables) > 1 else pa.Table.from_batches(tables)
+    if not batches:
+        # Preserve the schema (column names/count) even for a 0-row file, like
+        # pd.read_parquet does, rather than returning a shapeless empty frame.
+        empty = pa.Table.from_batches([], schema=parquet.schema_arrow)
+        return empty.to_pandas(), truncated
+    # from_batches accepts 1..N RecordBatches. Do NOT use pa.concat_tables here:
+    # it requires Tables and segfaults on RecordBatch input (apache/arrow#47000)
+    # — which is exactly the multi-batch (>64Ki-row) case this path exists for.
+    combined = pa.Table.from_batches(batches)
     return combined.to_pandas(), truncated
 
 
@@ -325,11 +330,10 @@ def _read_parquet(path: Path) -> tuple[Any, bool]:
 
     ``pd.read_parquet`` fully materializes the file (no ``nrows``), so an
     uncapped read would defeat the OOM guard the CSV/Excel paths enforce —
-    and parquet is the format most likely to be huge. Cap via pyarrow
-    row-groups (mirrors ``data_profile``'s engine preference). Falls back to
-    a full ``pd.read_parquet`` only when pyarrow is unavailable (pandas's
-    parquet engine is pyarrow/fastparquet, so pyarrow is present whenever a
-    parquet read can succeed at all).
+    and parquet is the format most likely to be huge. Cap by STREAMING batches
+    (``iter_batches``) so peak memory stays bounded regardless of row-group
+    layout. Falls back to a full ``pd.read_parquet`` only when pyarrow is
+    unavailable.
     """
     try:
         return _capped_parquet_df(path, _MAX_ROWS)

@@ -442,23 +442,33 @@ def _rg(df):
     return _RG(df)
 
 
-def _pa_pq_shims(batches):
-    """Build (pyarrow, pyarrow.parquet) module shims that stream ``batches``."""
+def _pa_pq_shims(batches, columns=None):
+    """Build (pyarrow, pyarrow.parquet) module shims that stream ``batches``.
+
+    ``columns`` is the schema the empty-file path should preserve (defaults to
+    the union of the batches' columns).
+    """
     import types
 
     import pandas as pd
 
+    if columns is None:
+        columns = list(batches[0]._df.columns) if batches else []
+
     pa = types.ModuleType("pyarrow")
-    pa.concat_tables = lambda tables: _rg(
-        pd.concat([t._df for t in tables], ignore_index=True)
+    # from_batches must accept (batches, schema=None); concat_tables is
+    # intentionally ABSENT so a regression that calls it fails loudly.
+    pa.Table = types.SimpleNamespace(
+        from_batches=lambda bs, schema=None: _rg(
+            pd.concat([b._df for b in bs], ignore_index=True)
+            if bs
+            else pd.DataFrame({c: pd.Series(dtype="object") for c in columns})
+        )
     )
-    table_mod = types.SimpleNamespace(
-        from_batches=lambda bs: _rg(pd.concat([b._df for b in bs], ignore_index=True))
-    )
-    pa.Table = table_mod
 
     class _PF:
         metadata = types.SimpleNamespace(num_rows=sum(b.num_rows for b in batches))
+        schema_arrow = types.SimpleNamespace(names=columns)
 
         def iter_batches(self, batch_size):
             return iter(batches)
@@ -519,6 +529,44 @@ def test_capped_parquet_df_single_oversized_batch_stays_capped(monkeypatch):
     df, truncated = dq._capped_parquet_df("fake.parquet", 10)
     assert truncated is True
     assert len(df) == 10
+
+
+def test_capped_parquet_df_multi_batch_uses_from_batches_not_concat(monkeypatch):
+    """Multi-batch combine must go through Table.from_batches (RecordBatch-safe),
+    NOT pa.concat_tables (which segfaults on RecordBatch — apache/arrow#47000).
+    The shim omits concat_tables entirely, so a regression calling it errors."""
+    pd = pytest.importorskip("pandas")
+    import sys
+
+    # >batch_size rows forces the multi-batch combine branch.
+    batches = [
+        _rg(pd.DataFrame({"a": range(8)})),
+        _rg(pd.DataFrame({"a": range(9)})),
+        _rg(pd.DataFrame({"a": range(8)})),
+    ]
+    pa, pq = _pa_pq_shims(batches)
+    assert not hasattr(pa, "concat_tables")  # regression would AttributeError, loudly
+    monkeypatch.setitem(sys.modules, "pyarrow", pa)
+    monkeypatch.setitem(sys.modules, "pyarrow.parquet", pq)
+
+    df, truncated = dq._capped_parquet_df("fake.parquet", 100)
+    assert truncated is False
+    assert len(df) == 25  # all three batches combined via from_batches
+
+
+def test_capped_parquet_df_empty_preserves_schema(monkeypatch):
+    """A 0-row parquet keeps its columns (like pd.read_parquet), not a shapeless frame."""
+    pytest.importorskip("pandas")
+    import sys
+
+    pa, pq = _pa_pq_shims([], columns=["order_id", "amount"])
+    monkeypatch.setitem(sys.modules, "pyarrow", pa)
+    monkeypatch.setitem(sys.modules, "pyarrow.parquet", pq)
+
+    df, truncated = dq._capped_parquet_df("fake.parquet", 10)
+    assert truncated is False
+    assert len(df) == 0
+    assert list(df.columns) == ["order_id", "amount"]
 
 
 async def test_parquet_over_cap_is_truncated_end_to_end(tmp_path, monkeypatch):
