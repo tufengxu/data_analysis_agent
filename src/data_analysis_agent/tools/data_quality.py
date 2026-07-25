@@ -283,11 +283,54 @@ def _read_delimited(path: Path, sep: str) -> tuple[Any, bool]:
     return df, truncated
 
 
-def _read_parquet(path: Path) -> tuple[Any, bool]:
-    import pandas as pd
+def _capped_parquet_df(path: Path, max_rows: int) -> tuple[Any, bool]:
+    """Read a parquet file via pyarrow row-groups, capped at ``max_rows``.
 
-    df = pd.read_parquet(path)
-    return df, False  # columnar read; no row cap applied
+    Returns ``(df, truncated)``. Isolated here (rather than inlined) so the cap
+    loop can be exercised with a stubbed pyarrow — pandas resolves its parquet
+    engine too aggressively for a sys.modules shim to be safe. ImportError for
+    a missing pyarrow propagates to ``_read_parquet``'s fallback.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    parquet = pq.ParquetFile(path)
+    truncated = parquet.metadata.num_rows > max_rows
+    tables = []
+    remaining = max_rows
+    for i in range(parquet.metadata.num_row_groups):
+        if remaining <= 0:
+            break
+        row_group = parquet.read_row_group(i)
+        if row_group.num_rows > remaining:
+            row_group = row_group.slice(0, remaining)
+        tables.append(row_group)
+        remaining -= row_group.num_rows
+    if not tables:
+        import pandas as pd
+
+        return pd.DataFrame(), truncated
+    combined = tables[0] if len(tables) == 1 else pa.concat_tables(tables)
+    return combined.to_pandas(), truncated
+
+
+def _read_parquet(path: Path) -> tuple[Any, bool]:
+    """Read a parquet file capped at _MAX_ROWS; return (df, truncated).
+
+    ``pd.read_parquet`` fully materializes the file (no ``nrows``), so an
+    uncapped read would defeat the OOM guard the CSV/Excel paths enforce —
+    and parquet is the format most likely to be huge. Cap via pyarrow
+    row-groups (mirrors ``data_profile``'s engine preference). Falls back to
+    a full ``pd.read_parquet`` only when pyarrow is unavailable (pandas's
+    parquet engine is pyarrow/fastparquet, so pyarrow is present whenever a
+    parquet read can succeed at all).
+    """
+    try:
+        return _capped_parquet_df(path, _MAX_ROWS)
+    except ImportError:
+        import pandas as pd
+
+        return pd.read_parquet(path), False
 
 
 def _read_excel(path: Path, sheet: str | None) -> tuple[list[Any], list[str], bool]:

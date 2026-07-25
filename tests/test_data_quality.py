@@ -381,11 +381,153 @@ async def test_parquet_end_to_end(tmp_path):
     assert not result.is_error
     report = result.metadata["quality"]
     assert report["format"] == "parquet"
-    assert report["truncated"] is False  # parquet is not row-capped
+    assert report["truncated"] is False  # small file is under the row cap
     table = report["tables"][0]
     assert table["n_duplicate_rows"] == 1
     cols = {c["name"]: c for c in table["columns"]}
     assert cols["amount"]["n_missing"] == 1
+
+
+def test_read_parquet_uses_capped_reader_and_falls_back(monkeypatch):
+    """Parquet reads go through the _MAX_ROWS-capped row-group reader (review MAJOR),
+    and fall back to a plain read only when pyarrow is genuinely absent.
+
+    A sys.modules pyarrow shim is unsafe (importing pyarrow.parquet makes pandas
+    eagerly init its Arrow backend and demand dozens of real attrs), so this
+    patches the isolated ``_capped_parquet_df`` seam instead of faking the engine.
+    The cap loop itself is covered by test_capped_parquet_df_* below.
+    """
+    pd = pytest.importorskip("pandas")
+
+    # Path 1: capped reader is used; its (df, truncated) is returned verbatim.
+    seen = {}
+
+    def _fake_capped(path, max_rows):
+        seen["max_rows"] = max_rows
+        return pd.DataFrame({"a": [1, 2]}), False
+
+    monkeypatch.setattr(dq, "_capped_parquet_df", _fake_capped)
+    df, truncated = dq._read_parquet("fake.parquet")
+    assert truncated is False
+    assert list(df["a"]) == [1, 2]
+    assert seen["max_rows"] == dq._MAX_ROWS  # cap is threaded through
+
+    # Path 2: pyarrow absent -> ImportError from the capped reader triggers the
+    # plain-read fallback (which itself errors here since no engine/file, but the
+    # fallback path is what we assert via the raised error type changing).
+    def _no_pyarrow(path, max_rows):
+        raise ImportError("No module named 'pyarrow'")
+
+    monkeypatch.setattr(dq, "_capped_parquet_df", _no_pyarrow)
+    monkeypatch.setattr(pd, "read_parquet", lambda p: pd.DataFrame({"b": [9]}))
+    df, truncated = dq._read_parquet("fake.parquet")
+    assert truncated is False
+    assert list(df["b"]) == [9]  # fell back to plain pd.read_parquet
+
+
+def _rg(df):
+    """A minimal row-group stand-in (slice/to_pandas/num_rows)."""
+
+    class _RG:
+        def __init__(self, frame):
+            self._df = frame
+            self.num_rows = len(frame)
+
+        def slice(self, off, n):
+            return _RG(self._df.iloc[off : off + n])
+
+        def to_pandas(self):
+            return self._df
+
+    return _RG(df)
+
+
+def test_capped_parquet_df_caps_across_row_groups(monkeypatch):
+    """The cap loop stops at max_rows across row-group boundaries."""
+    pd = pytest.importorskip("pandas")
+
+    class _Meta:
+        num_rows = 25
+        num_row_groups = 3
+
+    rgs = [
+        _rg(pd.DataFrame({"a": range(8)})),
+        _rg(pd.DataFrame({"a": range(9)})),
+        _rg(pd.DataFrame({"a": range(8)})),
+    ]
+
+    class _PF:
+        metadata = _Meta()
+
+        def read_row_group(self, i):
+            return rgs[i]
+
+    import sys
+    import types
+
+    pa = types.ModuleType("pyarrow")
+    pa.concat_tables = lambda tables: _rg(
+        pd.concat([t._df for t in tables], ignore_index=True)
+    )
+    pq = types.ModuleType("pyarrow.parquet")
+    pq.ParquetFile = lambda path: _PF()
+    pa.parquet = pq
+    monkeypatch.setitem(sys.modules, "pyarrow", pa)
+    monkeypatch.setitem(sys.modules, "pyarrow.parquet", pq)
+
+    df, truncated = dq._capped_parquet_df("fake.parquet", 10)
+    assert truncated is True
+    assert len(df) == 10  # 8 + 2 (second group sliced)
+
+
+def test_capped_parquet_df_under_cap_reads_all(monkeypatch):
+    """Under the cap the full table is read and not flagged."""
+    pd = pytest.importorskip("pandas")
+
+    class _Meta:
+        num_rows = 4
+        num_row_groups = 1
+
+    rgs = [_rg(pd.DataFrame({"a": range(4)}))]
+
+    class _PF:
+        metadata = _Meta()
+
+        def read_row_group(self, i):
+            return rgs[i]
+
+    import sys
+    import types
+
+    pa = types.ModuleType("pyarrow")
+    pq = types.ModuleType("pyarrow.parquet")
+    pq.ParquetFile = lambda path: _PF()
+    pa.parquet = pq
+    monkeypatch.setitem(sys.modules, "pyarrow", pa)
+    monkeypatch.setitem(sys.modules, "pyarrow.parquet", pq)
+
+    df, truncated = dq._capped_parquet_df("fake.parquet", 10)
+    assert truncated is False
+    assert len(df) == 4
+
+
+async def test_parquet_over_cap_is_truncated_end_to_end(tmp_path, monkeypatch):
+    """Real-engine check: a multi-row-group parquet over _MAX_ROWS is truncated."""
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")  # needs a real engine to WRITE the fixture
+    import pyarrow  # noqa: F401 — confirm a usable engine, not a leftover shim
+    monkeypatch.setattr(dq, "_MAX_ROWS", 3)
+    df = pd.DataFrame({"a": range(9)})
+    pq_path = tmp_path / "big.parquet"
+    df.to_parquet(pq_path, row_group_size=3)  # 3 row groups of 3 rows
+    tool = DataQualityTool(allowed_paths=[tmp_path])
+
+    result = await tool.call({"path": str(pq_path)})
+
+    assert not result.is_error
+    report = result.metadata["quality"]
+    assert report["truncated"] is True
+    assert report["tables"][0]["n_rows"] == 3
 
 
 async def test_parquet_missing_engine_error_message(tmp_path, monkeypatch):
