@@ -153,19 +153,20 @@ class NlQueryTool(Tool):
         numeric_cols, cat_cols = self._columns_from_schema(input_data.get("schema"))
 
         warnings: list[str] = []
-        display_source = data_source
+        # Apply the credential guard to EVERY source type, not just SQL: a
+        # credentialed URL (``https://user:pw@host/data.csv``, which pd.read_csv
+        # happily accepts) would otherwise be inlined verbatim into the generated
+        # code and echoed in the content/trajectory (review MAJOR). The guard is
+        # source-agnostic — embedded '@' userinfo is the leak signal regardless.
+        display_source, safe_source, cred_warning = self._guard_source(data_source)
+        if cred_warning:
+            warnings.append(cred_warning)
         if source_type in ("csv", "parquet"):
-            code = self._generate_pandas(query, data_source, source_type, numeric_cols, cat_cols)
+            code = self._generate_pandas(query, safe_source, source_type, numeric_cols, cat_cols)
         elif source_type == "sql":
-            if self._has_embedded_credentials(data_source):
-                warnings.append(
-                    "SQL connection string had embedded credentials; generated code "
-                    "reads $DB_URL instead — set it in the environment, never hardcode."
-                )
-                display_source = self._redact_connection_string(data_source)
-            code = self._generate_sql(query, data_source)
+            code = self._generate_sql(query, safe_source)
         else:
-            code = self._generate_dataframe(query, data_source, numeric_cols, cat_cols)
+            code = self._generate_dataframe(query, safe_source, numeric_cols, cat_cols)
 
         content = (
             f"Generated query code for: '{query}'\n\n"
@@ -299,28 +300,65 @@ class NlQueryTool(Tool):
             return urlunparse(parsed._replace(scheme=scheme, netloc=netloc, query="", fragment=""))
         return "<redacted-connection>"
 
+    def _guard_source(self, data_source: str) -> tuple[str, str | None, str | None]:
+        """Credential guard for ANY source type (review MAJOR: not just SQL).
+
+        Returns ``(display_source, safe_source, warning)``:
+        - ``display_source`` is always safe to echo (redacted when credentialed).
+        - ``safe_source`` is ``None`` when credentials were detected — generators
+          must then read the value from an env var placeholder instead of inlining
+          the raw string. Otherwise it is the raw ``data_source`` unchanged.
+        - ``warning`` is a human note when redaction happened, else ``None``.
+
+        A pandas-readable URL can carry userinfo too (``https://u:p@host/x.csv``);
+        inlining it would leak the secret into code, content, and the trajectory.
+        """
+        if not self._has_embedded_credentials(data_source):
+            return data_source, data_source, None
+        warning = (
+            "Data source had embedded credentials; generated code reads it from an "
+            "environment variable instead — set it in the environment, never hardcode."
+        )
+        return self._redact_connection_string(data_source), None, warning
+
     # --- code generators -------------------------------------------------------
 
     def _generate_pandas(
         self,
         query: str,
-        data_source: str,
+        data_source: str | None,
         source_type: str,
         numeric_cols: list[str] | None = None,
         cat_cols: list[str] | None = None,
     ) -> str:
-        """Generate pandas code for CSV/Parquet."""
+        """Generate pandas code for CSV/Parquet.
+
+        ``data_source`` is ``None`` when the source carried embedded credentials;
+        the generated code then reads it from ``$DATA_SOURCE_URL`` so the secret
+        is never inlined.
+        """
         read_func = "pd.read_csv" if source_type == "csv" else "pd.read_parquet"
         intents = self._detect_intents(query)
         num = self._extract_number(query) or 10
 
-        header = [
-            "import pandas as pd",
-            f"df = {read_func}(r'{data_source}')",
-            f"# User query: {query}",
-            f"# Detected intents: {', '.join(intents) if intents else 'general exploration'}",
-            "",
-        ]
+        if data_source is None:
+            header = [
+                "import os",
+                "import pandas as pd",
+                "# credentialed source via environment — never hardcode the URL",
+                f"df = {read_func}(os.environ['DATA_SOURCE_URL'])",
+                f"# User query: {query}",
+                f"# Detected intents: {', '.join(intents) if intents else 'general exploration'}",
+                "",
+            ]
+        else:
+            header = [
+                "import pandas as pd",
+                f"df = {read_func}(r'{data_source}')",
+                f"# User query: {query}",
+                f"# Detected intents: {', '.join(intents) if intents else 'general exploration'}",
+                "",
+            ]
 
         # Schema-aware path: reference REAL column names from data_profile.
         if numeric_cols is not None or cat_cols is not None:
@@ -465,6 +503,21 @@ class NlQueryTool(Tool):
                 "print(result)",
             ]
             return "\n".join(lines)
+        if "unique" in intents:
+            # Mirror the generic path's nunique loop (review MAJOR: schema-aware
+            # silently dropped it). Prefer real object-typed schema columns.
+            cols = cat_cols if cat_cols else numeric_cols
+            if cols:
+                for c in cols:
+                    lines.append(f"print({c!r}, ':', df[{c!r}].nunique(), 'unique values')")
+            else:
+                lines += [
+                    "for col in df.select_dtypes(include='object').columns:",
+                    "    print(f'{col}: {df[col].nunique()} unique values')",
+                ]
+            lines.append("result = None")
+            lines += ["if result is not None:", "    print(result)"]
+            return "\n".join(lines)
 
         # groupby / aggregate / sort / filter with real column names
         if "groupby" in intents and cat_col and num_col:
@@ -511,17 +564,17 @@ class NlQueryTool(Tool):
         lines += ["result = df.head()", "print(result)"]
         return "\n".join(lines)
 
-    def _generate_sql(self, query: str, data_source: str) -> str:
+    def _generate_sql(self, query: str, data_source: str | None) -> str:
         """Generate SQL code based on query intent.
 
-        If the connection string carries embedded credentials, the generated
-        code reads it from ``$DB_URL`` (not inlined) so credentials never appear
-        in the code or trajectory.
+        ``data_source`` is ``None`` when the connection string carried embedded
+        credentials (guarded upstream); the generated code then reads it from
+        ``$DB_URL`` so credentials never appear in the code or trajectory.
         """
         intents = self._detect_intents(query)
         num = self._extract_number(query) or 10
 
-        if self._has_embedded_credentials(data_source):
+        if data_source is None:
             engine_lines = [
                 "import os",
                 "from sqlalchemy import create_engine",
@@ -585,16 +638,25 @@ class NlQueryTool(Tool):
     def _generate_dataframe(
         self,
         query: str,
-        data_source: str,
+        data_source: str | None,
         numeric_cols: list[str] | None = None,
         cat_cols: list[str] | None = None,
     ) -> str:
-        """Generate code for an in-memory DataFrame source."""
+        """Generate code for an in-memory DataFrame source.
+
+        ``data_source`` is only a label comment (the frame is already in memory);
+        when ``None`` (credentialed label) it is omitted so no secret is inlined.
+        """
         intents = self._detect_intents(query)
         num = self._extract_number(query) or 10
 
+        source_comment = (
+            f"# DataFrame source: {data_source}"
+            if data_source is not None
+            else "# DataFrame source: <redacted-connection>"
+        )
         lines = [
-            f"# DataFrame source: {data_source}",
+            source_comment,
             f"# User query: {query}",
             f"# Detected intents: {', '.join(intents) if intents else 'general exploration'}",
             "# The dataframe is already available as 'df'",
@@ -620,6 +682,14 @@ class NlQueryTool(Tool):
                     if numeric_cols
                     else "result = df.select_dtypes(include='number').corr()"
                 )
+            elif "count" in intents:
+                lines.append("result = df.count()")
+            elif "unique" in intents:
+                lines += [
+                    "for col in df.select_dtypes(include='object').columns:",
+                    "    print(f'{col}: {df[col].nunique()} unique values')",
+                ]
+                lines.append("result = None")
             elif "nlargest" in intents and num_col:
                 lines.append(f"result = df.nlargest({num}, {num_col!r})")
             elif "nsmallest" in intents and num_col:

@@ -258,3 +258,94 @@ def test_redact_connection_string_hides_credentials():
     assert "s3cr3t" not in redacted
     assert "alice" not in redacted
     assert "db.host" in redacted  # host preserved (non-secret)
+
+
+# --- review MAJOR-1: credential guard applies to ALL source types, not just SQL ---
+
+
+async def test_csv_with_credentialed_url_uses_env_not_inlined():
+    """A credentialed pandas-readable URL must not leak into code/content."""
+    tool = NlQueryTool()
+    secret = "https://alice:s3cr3t@host/data.csv"
+    result = await tool.call({"query": "show rows", "data_source": secret, "source_type": "csv"})
+    code = result.metadata["generated_code"]
+    assert "s3cr3t" not in code
+    assert "alice" not in code
+    assert "os.environ['DATA_SOURCE_URL']" in code
+    assert "s3cr3t" not in result.content
+    assert "alice" not in result.content
+    assert any("credentials" in w for w in result.metadata["warnings"])
+
+
+async def test_parquet_with_credentialed_url_uses_env_not_inlined():
+    tool = NlQueryTool()
+    secret = "https://bob:hunter2@host/data.parquet"
+    result = await tool.call({"query": "show rows", "data_source": secret, "source_type": "parquet"})
+    code = result.metadata["generated_code"]
+    assert "hunter2" not in code
+    assert "os.environ['DATA_SOURCE_URL']" in code
+    assert "hunter2" not in result.content
+
+
+async def test_dataframe_with_credentialed_label_not_inlined():
+    tool = NlQueryTool()
+    secret = "https://alice:s3cr3t@host/df"
+    result = await tool.call(
+        {"query": "show rows", "data_source": secret, "source_type": "dataframe"}
+    )
+    assert "s3cr3t" not in result.metadata["generated_code"]
+    assert "s3cr3t" not in result.content
+
+
+async def test_csv_without_credentials_still_verbatim():
+    """Backward compat: a plain path is inlined as before, no env indirection."""
+    tool = NlQueryTool()
+    result = await tool.call({"query": "show rows", "data_source": "/data/x.csv", "source_type": "csv"})
+    code = result.metadata["generated_code"]
+    assert "pd.read_csv(r'/data/x.csv')" in code
+    assert result.metadata["warnings"] == []
+
+
+# --- review MAJOR-2: schema-aware path restores count/unique intents ---
+
+_SCHEMA = {
+    "columns": [
+        {"name": "region", "dtype": "object"},
+        {"name": "amount", "dtype": "float64"},
+    ]
+}
+
+
+async def test_schema_aware_count_intent_not_dropped():
+    tool = NlQueryTool()
+    result = await tool.call(
+        {
+            "query": "count the rows",
+            "data_source": "/d/x.csv",
+            "source_type": "csv",
+            "schema": _SCHEMA,
+        }
+    )
+    assert "df.count()" in result.metadata["generated_code"]
+
+
+async def test_schema_aware_unique_intent_not_dropped():
+    tool = NlQueryTool()
+    result = await tool.call(
+        {
+            "query": "how many unique values",
+            "data_source": "/d/x.csv",
+            "source_type": "csv",
+            "schema": _SCHEMA,
+        }
+    )
+    assert "nunique" in result.metadata["generated_code"]
+
+
+async def test_schema_aware_dataframe_count_and_unique():
+    tool = NlQueryTool()
+    for query, needle in (("count rows", "df.count()"), ("unique values", "nunique")):
+        result = await tool.call(
+            {"query": query, "data_source": "my_df", "source_type": "dataframe", "schema": _SCHEMA}
+        )
+        assert needle in result.metadata["generated_code"], query
