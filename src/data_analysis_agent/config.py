@@ -40,6 +40,8 @@ class AgentConfig:
         "directory to discover its sheets, columns and dtypes (and, across files, the "
         "shared keys to join on). Pass the ABSOLUTE paths it reports into pd.read_csv / "
         "pd.read_excel — relative paths do not resolve in the execution sandbox. "
+        "Then call data_quality on a file to surface missingness, duplicate rows, "
+        "constant columns, numeric outliers and type anomalies before you trust the data. "
         "For multi-sheet or multi-file work: profile each source, decide the join keys, "
         "then merge/concat in python_analysis; the kernel keeps state across calls, so "
         "load each table once and reuse the variables.\n"

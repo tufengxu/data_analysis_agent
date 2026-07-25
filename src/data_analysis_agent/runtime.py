@@ -49,6 +49,7 @@ from .tools import (
     CausalReportTool,
     ChartRenderTool,
     DataProfileTool,
+    DataQualityTool,
     ExperimentReadoutTool,
     FileReadTool,
     HtmlReportTool,
@@ -67,6 +68,7 @@ from .workspace import Project, new_run_id
 READ_ONLY_TOOLS = (
     "read_file",
     "data_profile",
+    "data_quality",
     "nl_query",
     "retrieve_result",
     "report_need",
@@ -104,6 +106,7 @@ def build_registry(
     paths = list(analysis_paths) if analysis_paths else None
     registry.register(FileReadTool(allowed_paths=paths))
     registry.register(DataProfileTool(allowed_paths=paths))
+    registry.register(DataQualityTool(allowed_paths=paths))
     registry.register(
         PythonAnalysisTool(
             sampling_config=sampling_config,
