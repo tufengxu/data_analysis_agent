@@ -70,7 +70,7 @@
       无状态无路径（镜像 report_contract）。一轮独立审查收敛 0/0（MetricSpec.exclusions 跨
       reporting 链 additive 安全经探针验证）。**P1-4 工具硬化三部曲完成**（data_quality → join_planner → metric_contract）。
       跟进（minor）：live memory store 注入 tool（当前输入传入）；fuzzy 文本冲突判定；exclusions 进 html_report caveat。
-- [ ] P1-4.6 nl_query schema-aware 升级（部分）
+- [x] P1-4.6 nl_query schema-aware 升级 — ✅ PR #20（feat/nl-query-schema-aware）。① schema-aware：可选 `schema`（data_profile 列表）→ 生成代码用真实列名（按 query 关键词匹配数值列，categorical deny-list dtype 分类含 double/real/numeric）；无 schema 保持旧行为。② secret 防护：SQL 连接串含 `@` → 生成代码改用 `$DB_URL`、display 脱敏、warning；detection 用原始 `@`（不依赖 urlparse 的脆弱 netloc 解析，免疫密码含 `#`/`?`/`/`/`@`/scheme 含 `_`/畸形 URL），redact fail-closed（urlparse 干净提取才重建 scheme+host:port，否则占位）。**四轮独立审查收敛**（每轮挖出 secret 泄露路径并修：regex→urlparse→raw-`@`+fail-closed；400 fuzz 0 泄露）。20 测试。
 - [ ] P1-4.7 Excel 多表工作流（部分）
 
 ### 审计小项（触及相关代码时顺手）
