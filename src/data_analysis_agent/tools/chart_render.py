@@ -49,6 +49,12 @@ _WINDOWS_RESERVED_NAMES = frozenset(
     | {f"LPT{i}" for i in range(1, 10)}
 )
 
+# 顶层来源标记键(P0-3 数值校验 · 来源标注分支)。chart_render 在产出的 option
+# 顶层写入 ``_source = {"tool": "chart_render", "family", "block_id"}``;ECharts
+# ``setOption`` 忽略未知顶层属性,渲染零影响。出口 QA(reporting.qa._SOURCE_KEY)
+# 凭此区分「经结构化管线产出」与「手写裸 ECharts」。两键字面值须保持一致。
+_SOURCE_KEY = "_source"
+
 
 class ChartRenderTool(Tool):
     """Render a structured chart spec + data into an ECharts option + JSON artifact."""
@@ -226,6 +232,9 @@ class ChartRenderTool(Tool):
         recommended = self._recommend_family(cf, data)
 
         option = self._build_option(cf, data, input_data)
+        # P0-3 来源标注:顶层注入 provenance 轨迹,供出口 QA 区分结构化产出与手写。
+        # 顶层自定义键被 ECharts setOption 忽略,不影响渲染。
+        option[_SOURCE_KEY] = {"tool": "chart_render", "family": family, "block_id": block_id}
 
         n_points: int | None
         n_observations: int | None
