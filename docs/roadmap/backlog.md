@@ -75,12 +75,12 @@
 
 ### 审计小项（触及相关代码时顺手）
 
-- [ ] §3.6 完整 evidence artifact 解析（ArtifactStore/ResultStore 接到渲染边界）
-- [ ] kernel stdout 捕获期上限（响应已 cap；proper fix 需改自包含 kernel_main）
+- [x] §3.6 完整 evidence artifact 解析（ArtifactStore/ResultStore 接到渲染边界）— ✅ PR #17（feat/evidence-resolution）。QA 加 `evidence_resolver` 注入式三态检查（resolved/fabricated/descriptive）；`ResultStore.contains` 只读存在性；html_report 注入 result_store + 构建 resolver，**限定 artifact_dir 子树**（杀文件存在性 oracle + 杜绝系统文件冒充证据，symlink 安全）。fabricated ref → HIGH（NEEDS_REVIEW 徽章，不拒渲染，与 evidence.empty_ref 一致）。两轮独立审查收敛 0/0（r1 抓 spec↔impl 矛盾 + 路径遍历；r2 实测 symlink fail-closed）。**不做数值校验**（独立 slice）。
+- [x] kernel stdout 捕获期上限 — ⏸ 已基本封顶（kernel_main 有 `_MAX_FIELD_CHARS=2M`/`_MAX_RESPONSE_BYTES=8M`/stdout clip 500k；残留仅短命子进程内 StringIO 执行期膨胀，价值低，不做）
 - [ ] recovery-policy 扩面（streaming 重试已部分缓解）
-- [ ] rephrase 启发式升级（CJK/否定变体；现人审门+泄露守卫兜底）
-- [ ] overlay 域化（templates 已接 report_contract；overlays 需 contract 加 domain 字段）
-- [ ] ResultStore TTL 用 monotonic() 非墙上钟（low）
+- [ ] rephrase 启发式升级（CJK/否定变体；现人审门+泄露守卫兜底）— **待做 Slice 3**
+- [ ] overlay 域化（templates 已接 report_contract；overlays 需 contract 加 domain 字段）— **待做 Slice 2**
+- [x] ResultStore TTL 用 monotonic() 非墙上钟 — ⏸ 不做：`created_at` 持久化到 index.jsonl，`time.monotonic()` 契约不保证跨进程重启可比，naive 换会破坏跨重启 TTL；当前 wall-clock 对持久化时间戳正确（时钟跳对本地单用户 CLI 可忽略）
 
 ## CI / 基础设施待办
 
