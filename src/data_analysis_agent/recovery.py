@@ -19,7 +19,10 @@ the *policy* — which lever to pull, in what order, and when to stop.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from .context.compression import ContextCompressor, message_to_text
 from .protocol.client import AnthropicApiClient, AnthropicClientError
@@ -34,6 +37,10 @@ class RecoveryPolicy:
 
     RECOVERY_MAX_TOKENS = 64000
     MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
+    # Loop-level retries for transient API errors (429/timeout/overloaded) after
+    # the streaming layer's own retries are exhausted.
+    TRANSIENT_RECOVERY_LIMIT = 3
+    TRANSIENT_BACKOFF_CAP = 10.0
 
     # Cap on the history digest fed to the summarizer model.
     SUMMARIZE_INPUT_CHARS = 24_000
@@ -44,37 +51,63 @@ class RecoveryPolicy:
         compressor: ContextCompressor,
         client: AnthropicApiClient,
         max_tokens: int,
+        sleep: Callable[[float], Awaitable[None]] | Any = asyncio.sleep,
     ) -> None:
         self.compressor = compressor
         self.client = client
         self.max_tokens = max_tokens
+        self._sleep = sleep
 
     async def attempt_recovery(
         self,
         state: AgentState,
         error: AnthropicClientError,
     ) -> AgentState | None:
-        """Attempt to recover from recoverable API errors."""
+        """Attempt to recover from recoverable API errors.
+
+        Two mutually-exclusive paths: a length error ("prompt too long") goes
+        through the collapse/compact ladder; any other recoverable error is a
+        transient API error (429/timeout/overloaded/connection — the client only
+        marks these and length errors recoverable) handled by bounded backoff.
+        """
         msg = str(error).lower()
         if "prompt is too long" in msg or "too long" in msg:
-            # First try collapse drain (zero cost)
-            if self.compressor.collapse and self.compressor.collapse.staged_indices:
-                drained = self.compressor.drain_collapse(state.messages)
-                return state.with_messages(drained.messages).with_transition(
-                    ContinueReason.COLLAPSE_DRAIN_RETRY,
+            return await self._recover_prompt_too_long(state)
+        return await self._recover_transient(state)
+
+    async def _recover_prompt_too_long(self, state: AgentState) -> AgentState | None:
+        """Length-error ladder: drain staged collapse (zero cost), else one
+        reactive auto-compact fed an LLM summary of the dropped history."""
+        # First try collapse drain (zero cost)
+        if self.compressor.collapse and self.compressor.collapse.staged_indices:
+            drained = self.compressor.drain_collapse(state.messages)
+            return state.with_messages(drained.messages).with_transition(
+                ContinueReason.COLLAPSE_DRAIN_RETRY,
+            )
+        if not state.has_attempted_reactive_compact:
+            summary = await self._summarize_for_compact(state.messages)
+            compacted = self.compressor.force_auto_compact(state.messages, summary=summary)
+            return (
+                state.with_messages(
+                    compacted.messages,
                 )
-            if not state.has_attempted_reactive_compact:
-                summary = await self._summarize_for_compact(state.messages)
-                compacted = self.compressor.force_auto_compact(state.messages, summary=summary)
-                return (
-                    state.with_messages(
-                        compacted.messages,
-                    )
-                    .with_has_attempted_reactive_compact(True)
-                    .with_transition(
-                        ContinueReason.REACTIVE_COMPACT_RETRY,
-                    )
+                .with_has_attempted_reactive_compact(True)
+                .with_transition(
+                    ContinueReason.REACTIVE_COMPACT_RETRY,
                 )
+            )
+        return None
+
+    async def _recover_transient(self, state: AgentState) -> AgentState | None:
+        """Transient API error (429/timeout/overloaded): bounded loop-level
+        backoff retry. The streaming layer already retried a few times; this is
+        the last-chance retry before giving up (None → MODEL_ERROR)."""
+        if state.transient_recovery_count < self.TRANSIENT_RECOVERY_LIMIT:
+            delay = min(2**state.transient_recovery_count, self.TRANSIENT_BACKOFF_CAP)
+            await self._sleep(delay)
+            return state.with_transient_recovery_count(
+                state.transient_recovery_count + 1
+            ).with_transition(ContinueReason.TRANSIENT_RETRY)
         return None
 
     async def _summarize_for_compact(self, messages: list[Message]) -> str | None:
