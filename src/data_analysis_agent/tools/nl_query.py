@@ -506,9 +506,9 @@ class NlQueryTool(Tool):
         if "unique" in intents:
             # Mirror the generic path's nunique loop (review MAJOR: schema-aware
             # silently dropped it). Prefer real object-typed schema columns.
-            cols = cat_cols if cat_cols else numeric_cols
-            if cols:
-                for c in cols:
+            uniq_cols = cat_cols if cat_cols else numeric_cols
+            if uniq_cols:
+                for c in uniq_cols:
                     lines.append(f"print({c!r}, ':', df[{c!r}].nunique(), 'unique values')")
             else:
                 lines += [
