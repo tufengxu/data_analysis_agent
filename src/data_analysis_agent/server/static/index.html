@@ -11,6 +11,15 @@
       crossorigin="anonymous"
       defer
     ></script>
+    <!-- DOMPurify:对 marked 输出做 HTML 净化(必选)。agent 回答会回显不可信数据文件内容,
+         marked v12 默认放行内联 HTML,未净化的 innerHTML 即存储型 XSS,可读取本页内嵌的
+         CSRF token 并自动驱动 /api/approval。marked 与 DOMPurify 任一缺失都降级为纯文本(安全)。 -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"
+      integrity="sha384-eEu5CTj3qGvu9PdJuS+YlkNi7d2XxQROAFYOr59zgObtlcux1ae1Il3u7jvdCSWu"
+      crossorigin="anonymous"
+      defer
+    ></script>
     <style>
       * {
         box-sizing: border-box;
@@ -578,16 +587,26 @@
       let tokOut = 0;
       let artifacts = [];
       let answerText = "";
+      let runId = null; // current run's id; routes approval verdicts to the right run
 
       function setStatus(t) {
         statusEl.textContent = t;
       }
 
       function renderAnswer(final) {
-        // marked 可用则渲染 markdown,否则保留 pre-wrap 原文(CDN 失败时降级)。
-        if (window.marked && window.marked.parse) {
+        // markdown → HTML(marked),再经 DOMPurify 净化后才 innerHTML。agent 回答会回显
+        // 不可信数据文件单元格;marked v12 放行内联 HTML,未净化即存储型 XSS,可读 CSRF token
+        // 并自动驱动 /api/approval。marked 与 DOMPurify 都可用才渲染;任一缺失降级为纯文本。
+        if (
+          window.marked &&
+          window.marked.parse &&
+          window.DOMPurify &&
+          window.DOMPurify.sanitize
+        ) {
           answerEl.classList.remove("raw");
-          answerEl.innerHTML = window.marked.parse(answerText);
+          answerEl.innerHTML = window.DOMPurify.sanitize(
+            window.marked.parse(answerText),
+          );
         } else {
           answerEl.classList.add("raw");
           answerEl.textContent = answerText;
@@ -716,7 +735,7 @@
               "Content-Type": "application/json",
               "X-DAA-Token": CSRF,
             },
-            body: JSON.stringify({ approved: approved }),
+            body: JSON.stringify({ approved: approved, run_id: runId }),
           });
         } catch (e) {
           console.error("approval submit failed", e);
@@ -768,6 +787,9 @@
 
       function handle(ev) {
         switch (ev.type) {
+          case "run_start":
+            runId = ev.run_id; // route approval verdicts to THIS run (per-run handler)
+            break;
           case "request_start":
             setStatus("模型 " + ev.model_id + " · turn " + ev.turn_count);
             break;
@@ -921,7 +943,10 @@
                 encodeURIComponent(f.name),
               {
                 method: "POST",
-                headers: { "Content-Type": "application/octet-stream" },
+                headers: {
+                  "Content-Type": "application/octet-stream",
+                  "X-DAA-Token": CSRF,
+                },
                 body: f,
               },
             );

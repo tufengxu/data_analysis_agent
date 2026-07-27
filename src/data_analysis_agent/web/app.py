@@ -210,11 +210,14 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
             media_type="text/html",
             headers={
                 "Content-Disposition": "inline",
-                # Served HTML is agent/tool output (untrusted). `sandbox` forces an
-                # opaque origin: scripts still run (ECharts charts render) but the
-                # document can NOT reach the workbench origin — no reading the CSRF
-                # token, no driving /api/approval or /api/run/stream (review HIGH #1).
-                "Content-Security-Policy": "sandbox",
+                # Served HTML is agent/tool output (untrusted). `sandbox allow-scripts`
+                # gives the document an opaque origin WITHOUT `allow-same-origin`: its
+                # scripts run (ECharts charts render) but it can NOT access the
+                # workbench origin — no reading cookies/storage, no same-origin fetch
+                # to /api/approval or /api/run/stream, so it can neither steal the CSRF
+                # token nor drive the guarded endpoints (review HIGH #1). Bare `sandbox`
+                # would also block scripts and silently break chart rendering.
+                "Content-Security-Policy": "sandbox allow-scripts",
                 "X-Content-Type-Options": "nosniff",
             },
         )

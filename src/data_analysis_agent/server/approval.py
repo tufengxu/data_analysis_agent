@@ -34,10 +34,13 @@ class WebApprovalHandler:
         self._done = threading.Event()
 
     async def __call__(self, tool_name: str, params: dict[str, Any]) -> bool:
-        # Single-run: only one AWAITING_CONFIRMATION is in flight at a time.
+        # One AWAITING_CONFIRMATION is in flight at a time per handler; the server
+        # binds a fresh handler per run (see server/app.py) so concurrent runs never
+        # share verdict state.
         self.pending = {"tool_name": tool_name, "parameters": params}
         self._decision = False
         self._done.clear()
+        timed_out = False
         deadline = time.monotonic() + APPROVAL_TIMEOUT_S
         try:
             # Poll the threading.Event without blocking the event loop.
@@ -46,9 +49,14 @@ class WebApprovalHandler:
                     raise TimeoutError
                 await asyncio.sleep(0.02)
         except TimeoutError:
-            self._decision = False  # 超时 = deny(硬约束)
+            # 超时 = deny(硬约束)。先清 pending:并发 resolve() 见 pending is None
+            # 立即拒绝写入,无法在超时→finally 的窗口内把 _decision 翻成 True;再用
+            # 本地标志锁定,finally 读本地值而非可能被竞态改写的 self._decision。
+            self.pending = None
+            self._decision = False
+            timed_out = True
         finally:
-            decision = self._decision
+            decision = False if timed_out else self._decision
             self.pending = None
             self._done.clear()
         return decision
