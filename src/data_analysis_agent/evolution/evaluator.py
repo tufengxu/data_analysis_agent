@@ -351,7 +351,12 @@ class SkillEvaluator:
                 continue
             from_status = skill.status
             skill.status = "proposed_promote" if decision == "promote" else "retired"
-            skill.eval_score = verdict.get("metrics", {}).get("pass_rate")
+            # Only refresh eval_score when the verdict actually carries one — a
+            # re-apply verdict without metrics used to clobber a previously-pinned
+            # score to None (#38 review observation).
+            new_score = verdict.get("metrics", {}).get("pass_rate")
+            if new_score is not None:
+                skill.eval_score = new_score
             saved = save_skill(self.skills_dir, skill.to_dict())
             if saved is None:
                 # save_skill refused to write (e.g. instructions carry an injection

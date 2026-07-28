@@ -95,6 +95,33 @@ def test_evaluator_apply_noop_reapply_stays_silent(tmp_path: Path) -> None:
     assert read_skill_ledger(skills) == []  # but the ledger stays silent (no-op)
 
 
+def test_evaluator_apply_without_metrics_preserves_score(tmp_path: Path) -> None:
+    """#38 review observation: a re-apply verdict carrying no metrics must not
+    clobber a previously-pinned eval_score to None."""
+    import json as _json
+
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "s1.json").write_text(
+        _json.dumps(
+            {
+                "name": "s1",
+                "keywords": ["k"],
+                "instructions": "x",
+                "status": "proposed_promote",
+                "eval_score": 0.8,
+            }
+        ),
+        encoding="utf-8",
+    )
+    evaluator = SkillEvaluator(tmp_path / "tasks", skills, lambda t, s: None)
+    # Re-apply promote with NO metrics key → eval_score preserved, not nulled.
+    out = evaluator.apply({"skill": "s1", "decision": "promote"})
+    assert out is not None
+    record = _json.loads((skills / "s1.json").read_text(encoding="utf-8"))
+    assert record["eval_score"] == 0.8
+
+
 def test_evaluator_apply_skips_ledger_when_save_refused(tmp_path: Path) -> None:
     """MINOR #1: when save_skill refuses the write (instructions carry an injection
     marker), apply() returns None and writes NO ledger entry — the governance
