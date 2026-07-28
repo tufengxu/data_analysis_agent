@@ -332,6 +332,14 @@ class SkillEvaluator:
         (NOT ``active``) — it will not load into the live registry until a human
         runs ``evolution approve <name>``. ``retire`` (demotion) is safe to apply
         directly. ``needs_review`` leaves the file unchanged.
+
+        Returns the written path, or None when: the verdict is ``needs_review``,
+        the skill is not found, OR ``save_skill`` refuses the write (instructions
+        carry an injection marker) — in the last case no ledger entry is written,
+        so the append-only ledger never records a transition that didn't land on
+        disk. A no-op re-apply (skill already in the target status) re-saves the
+        file (eval_score refresh) but stays silent in the ledger, mirroring
+        ``approve_skill`` / ``retire_skill`` idempotence.
         """
         decision = verdict["decision"]
         if decision == "needs_review":
@@ -345,15 +353,25 @@ class SkillEvaluator:
             skill.status = "proposed_promote" if decision == "promote" else "retired"
             skill.eval_score = verdict.get("metrics", {}).get("pass_rate")
             saved = save_skill(self.skills_dir, skill.to_dict())
-            _append_skill_ledger(
-                self.skills_dir,
-                skill=skill.name,
-                action="proposed_promote" if decision == "promote" else "eval_retire",
-                from_status=from_status,
-                to_status=skill.status,
-                eval_score=skill.eval_score,
-                metrics=verdict.get("metrics", {}),
-            )
+            if saved is None:
+                # save_skill refused to write (e.g. instructions carry an injection
+                # marker). Nothing was persisted, so the governance ledger must NOT
+                # claim a transition that never happened on disk (review MINOR #1).
+                return None
+            if skill.status != from_status:
+                # Real status transition → auditable ledger entry. A no-op re-apply
+                # (same status) stays silent, matching approve_skill / retire_skill
+                # idempotence and the _append_skill_ledger "no-op stays silent"
+                # docstring this method previously violated (review MINOR #2).
+                _append_skill_ledger(
+                    self.skills_dir,
+                    skill=skill.name,
+                    action="proposed_promote" if decision == "promote" else "eval_retire",
+                    from_status=from_status,
+                    to_status=skill.status,
+                    eval_score=skill.eval_score,
+                    metrics=verdict.get("metrics", {}),
+                )
             return saved
         return None
 
@@ -563,8 +581,9 @@ def _append_skill_ledger(
 
     Append-only (mirror of the web feedback log): the skill lifecycle must be
     auditable — every evaluate proposal, approve, and retire leaves a dated,
-    attributed trace. Only call on a real status transition (no-op idempotence
-    stays silent).
+    attributed trace. This helper appends UNCONDITIONALLY; the no-op-idempotence
+    contract (a re-apply to an already-target status stays silent) is enforced by
+    each caller (``apply`` / ``approve_skill`` / ``retire_skill``) before calling.
     """
     entry = {
         "skill": skill,
