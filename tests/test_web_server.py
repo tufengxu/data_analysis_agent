@@ -283,7 +283,11 @@ def test_report_endpoints_reachable_through_server(tmp_path: Path) -> None:
     assert contract.status_code == 200
     assert contract.json()["report_type"] == "daily_kpi"
 
-    fb = client.post("/workbench/api/feedback", json={"tags": ["good"], "comment": "ok"})
+    fb = client.post(
+        "/workbench/api/feedback",
+        json={"tags": ["good"], "comment": "ok"},
+        headers=_csrf_headers(client),
+    )
     assert fb.status_code == 200
     assert fb.json()["stored"] is True
     assert (tmp_path / "feedback.jsonl").exists()

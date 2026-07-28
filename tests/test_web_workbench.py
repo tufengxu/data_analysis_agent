@@ -32,6 +32,16 @@ def _client(tmp_path: Path) -> TestClient:
     return TestClient(create_app(artifact_dir=tmp_path))
 
 
+def _csrf_headers(c: TestClient) -> dict[str, str]:
+    """Pull the CSRF token out of the served index (mirrors the live UI: token
+    embedded in HTML → X-DAA-Token header). Getting it from the served page proves
+    the app injects a token a same-origin caller can obtain."""
+    html = c.get("/").text
+    marker = 'const CSRF = "'
+    token = html.split(marker, 1)[1].split('"', 1)[0]
+    return {"X-DAA-Token": token}
+
+
 def test_serves_ui(tmp_path: Path):
     c = _client(tmp_path)
     res = c.get("/")
@@ -220,6 +230,7 @@ def test_feedback_stores(tmp_path: Path):
             "comment": "GMV 口径未确认",
             "readiness": "needs_review",
         },
+        headers=_csrf_headers(c),
     )
     assert res.status_code == 200
     assert res.json()["stored"] is True
@@ -229,6 +240,22 @@ def test_feedback_stores(tmp_path: Path):
     assert len(records) == 1
     assert "wrong_metric" in records[0]["tags"]
     assert records[0]["readiness"] == "needs_review"
+
+
+def test_feedback_requires_csrf_token(tmp_path: Path):
+    """M3-consistency: /api/feedback is CSRF-guarded — a cross-origin form POST
+    (text/plain, no preflight) can't plant bogus feedback because it cannot forge
+    the custom X-DAA-Token header."""
+    c = _client(tmp_path)
+    body = {"tags": ["good"], "comment": "x"}
+    # No token → 403.
+    assert c.post("/api/feedback", json=body).status_code == 403
+    # Wrong token → 403.
+    assert c.post("/api/feedback", json=body, headers={"X-DAA-Token": "wrong"}).status_code == 403
+    # The served token IS accepted, and the record lands.
+    ok = c.post("/api/feedback", json=body, headers=_csrf_headers(c))
+    assert ok.status_code == 200
+    assert (tmp_path / "feedback.jsonl").exists()
 
 
 # ----------------------------- 非确定性端点 stub(后续统一测试) -----------------------------

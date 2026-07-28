@@ -109,7 +109,9 @@ def create_app(
     app.state.artifact_dir = artifacts
 
     # Mount the report workbench (web/) under /workbench; serves `artifacts`.
-    app.mount("/workbench", create_web_app(artifacts))
+    # Pass the server's CSRF token so the report UI shares it with the live-run UI
+    # (web's /api/feedback checks the same X-DAA-Token).
+    app.mount("/workbench", create_web_app(artifacts, csrf_token=app.state.csrf_token))
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:

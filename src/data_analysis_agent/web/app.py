@@ -7,11 +7,12 @@ artifact 路径防护镜像 html_report(NUL/目录/点开头/点空格/Windows �
 from __future__ import annotations
 
 import json
+import secrets
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
 from data_analysis_agent.reporting.context_collector import (
@@ -91,20 +92,32 @@ def _validate_artifact_name(name: str) -> str | None:
     return None
 
 
-def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
-    """创建 FastAPI workbench app。artifact_dir 为 HTML 报告产物目录。"""
+def create_app(
+    artifact_dir: str | Path | None = None,
+    csrf_token: str | None = None,
+) -> FastAPI:
+    """创建 FastAPI workbench app。artifact_dir 为 HTML 报告产物目录。
+
+    ``csrf_token`` 校验 mutating 端点（/api/feedback）防跨源 form-POST 种植假反馈。
+    挂在 server 下时由 server 传入同一 token（两个 UI 共享）；独立运行时自生成。
+    """
     if artifact_dir is None:
         artifact_dir = Path(tempfile.mkdtemp(prefix="daa_web_"))
     artifacts = Path(artifact_dir).expanduser().resolve()
     artifacts.mkdir(parents=True, exist_ok=True)
+    if csrf_token is None:
+        csrf_token = secrets.token_urlsafe(24)
 
     app = FastAPI(title="DataAnalysisAgent Report Workbench", version="0.1.0")
     app.state.artifact_dir = artifacts
+    app.state.csrf_token = csrf_token
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> HTMLResponse:
         # redirect_slashes (default) 301s /workbench → /workbench/ so this serves the UI.
-        return HTMLResponse((_STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        # Inject the CSRF token so the UI can echo it as X-DAA-Token on /api/feedback.
+        html = (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(html.replace("__DAA_CSRF__", app.state.csrf_token))
 
     @app.post("/api/report/need")
     def report_need(req: NeedRequest) -> dict[str, Any]:
@@ -223,8 +236,14 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
         )
 
     @app.post("/api/feedback")
-    def feedback(req: FeedbackRequest) -> dict[str, Any]:
-        """捕获报告反馈标签(spec §5.4 feedback tags;§8 Wave 8 acceptance #3)。追加 JSONL。"""
+    def feedback(req: FeedbackRequest, request: Request) -> dict[str, Any]:
+        """捕获报告反馈标签(spec §5.4 feedback tags;§8 Wave 8 acceptance #3)。追加 JSONL。
+
+        X-DAA-Token 校验阻止跨源 form-POST 种植假反馈（自定义头 form 无法伪造，
+        与 server 的 run/approval/upload 守卫一致）。
+        """
+        if request.headers.get("X-DAA-Token") != app.state.csrf_token:
+            raise HTTPException(status_code=403, detail="missing/invalid CSRF token")
         record = {"tags": req.tags, "comment": req.comment, "readiness": req.readiness}
         feedback_path = artifacts / "feedback.jsonl"
         with feedback_path.open("a", encoding="utf-8") as fh:
