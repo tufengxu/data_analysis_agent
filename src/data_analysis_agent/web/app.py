@@ -102,8 +102,9 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
     app.state.artifact_dir = artifacts
 
     @app.get("/", response_class=HTMLResponse)
-    def index() -> str:
-        return (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    def index() -> HTMLResponse:
+        # redirect_slashes (default) 301s /workbench → /workbench/ so this serves the UI.
+        return HTMLResponse((_STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
     @app.post("/api/report/need")
     def report_need(req: NeedRequest) -> dict[str, Any]:
@@ -204,7 +205,22 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
         path = (artifacts / name).resolve()
         if not path.is_relative_to(artifacts) or not path.exists():
             raise HTTPException(status_code=404, detail="artifact not found")
-        return FileResponse(path, media_type="text/html", headers={"Content-Disposition": "inline"})
+        return FileResponse(
+            path,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": "inline",
+                # Served HTML is agent/tool output (untrusted). `sandbox allow-scripts`
+                # gives the document an opaque origin WITHOUT `allow-same-origin`: its
+                # scripts run (ECharts charts render) but it can NOT access the
+                # workbench origin — no reading cookies/storage, no same-origin fetch
+                # to /api/approval or /api/run/stream, so it can neither steal the CSRF
+                # token nor drive the guarded endpoints (review HIGH #1). Bare `sandbox`
+                # would also block scripts and silently break chart rendering.
+                "Content-Security-Policy": "sandbox allow-scripts",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.post("/api/feedback")
     def feedback(req: FeedbackRequest) -> dict[str, Any]:

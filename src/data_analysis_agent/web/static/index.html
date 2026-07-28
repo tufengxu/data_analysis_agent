@@ -88,10 +88,220 @@
         border-radius: 4px;
         margin-top: 8px;
       }
+      .fb-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .fb-btn {
+        min-width: 96px;
+        font-weight: 600;
+      }
+      .fb-btn.active {
+        outline: 2px solid #1c2b39;
+        outline-offset: 1px;
+      }
+      .fb-good {
+        background: #1e8449;
+      }
+      .fb-good:hover {
+        background: #186a3b;
+      }
+      .fb-bad {
+        background: #c0392b;
+      }
+      .fb-bad:hover {
+        background: #a02c22;
+      }
+      .fb-rephrase {
+        background: #b9770e;
+      }
+      .fb-rephrase:hover {
+        background: #9a620b;
+      }
+      .fb-status {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .fb-ok {
+        color: #1e8449;
+      }
+      .fb-err {
+        color: #c0392b;
+      }
+      /* 意图表单 + QA findings(P1-3.6,#26) */
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px 16px;
+        margin-top: 6px;
+      }
+      .form-grid label {
+        display: flex;
+        flex-direction: column;
+        font-size: 12px;
+        color: #5a6b7b;
+        gap: 3px;
+      }
+      .form-grid select,
+      .form-grid input[type="text"] {
+        padding: 6px 8px;
+        border: 1px solid #d0d7de;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+      .qa-finding {
+        border-left: 3px solid #d0d7de;
+        padding: 6px 12px;
+        margin: 8px 0;
+        font-size: 13px;
+        background: #fbfcfd;
+        border-radius: 0 4px 4px 0;
+      }
+      .qa-finding .sev {
+        display: inline-block;
+        font-weight: 700;
+        font-size: 11px;
+        padding: 1px 8px;
+        border-radius: 8px;
+        margin-right: 8px;
+        text-transform: uppercase;
+      }
+      .sev-blocker {
+        background: #fdedec;
+        color: #c0392b;
+      }
+      .qa-finding.sev-blocker {
+        border-left-color: #c0392b;
+      }
+      .sev-high {
+        background: #fef5e7;
+        color: #b9770e;
+      }
+      .qa-finding.sev-high {
+        border-left-color: #b9770e;
+      }
+      .sev-medium {
+        background: #fef9e7;
+        color: #9a620b;
+      }
+      .qa-finding.sev-medium {
+        border-left-color: #e0b53e;
+      }
+      .sev-info {
+        background: #e8f0fb;
+        color: #2f5aa0;
+      }
+      .qa-finding.sev-info {
+        border-left-color: #4a7bd0;
+      }
+      .qa-finding .fix {
+        color: #1e8449;
+        font-size: 12px;
+        margin-top: 3px;
+      }
+      .qa-finding .code {
+        font-family: ui-monospace, monospace;
+        color: #8a97a3;
+        font-size: 11px;
+      }
+      /* 顶栏导航 + 响应式 + 暗色(#30) */
+      body {
+        max-width: 1080px;
+        margin: 0 auto;
+      }
+      .topnav {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+      }
+      .topnav h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .topnav a {
+        color: #4a7bd0;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      .topnav .theme-toggle {
+        margin-left: auto;
+        background: #5a6b7b;
+        padding: 4px 12px;
+        font-size: 12px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body:not(.light) {
+          background: #14181d;
+          color: #d5dde4;
+        }
+        body:not(.light) .panel {
+          background: #1d232b;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        }
+        body:not(.light) textarea,
+        body:not(.light) input[type="text"],
+        body:not(.light) .form-grid select,
+        body:not(.light) .form-grid input[type="text"] {
+          background: #14181d;
+          color: #d5dde4;
+          border-color: #333d47;
+        }
+        body:not(.light) pre {
+          background: #14181d;
+          color: #d5dde4;
+        }
+        body:not(.light) .qa-finding {
+          background: #232a32;
+        }
+        body:not(.light) .topnav a {
+          color: #6ea3ef;
+        }
+      }
+      body.dark {
+        background: #14181d;
+        color: #d5dde4;
+      }
+      body.dark .panel {
+        background: #1d232b;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      }
+      body.dark textarea,
+      body.dark input[type="text"],
+      body.dark .form-grid select,
+      body.dark .form-grid input[type="text"] {
+        background: #14181d;
+        color: #d5dde4;
+        border-color: #333d47;
+      }
+      body.dark pre {
+        background: #14181d;
+        color: #d5dde4;
+      }
+      body.dark .qa-finding {
+        background: #232a32;
+      }
+      body.dark .topnav a {
+        color: #6ea3ef;
+      }
     </style>
   </head>
   <body>
-    <h1>DataAnalysisAgent · Report Workbench</h1>
+    <div class="topnav">
+      <h1>DataAnalysisAgent</h1>
+      <a href="/">← Live run 主面板</a>
+      <button type="button" class="theme-toggle" onclick="toggleTheme()">
+        🌗 主题
+      </button>
+    </div>
+    <h2 style="font-size: 15px; color: #5a6b7b; margin-bottom: 16px">
+      报告塑造 workbench(QA / 模板 / artifact / 反馈)
+    </h2>
 
     <div class="panel">
       <h2>1. 报告需求(report_need)</h2>
@@ -116,18 +326,75 @@
     </div>
 
     <div class="panel">
-      <h2>3. 报告契约(report_contract)</h2>
+      <h2>3. 报告意图 → 契约预览(report_contract)</h2>
       <input
         type="text"
         id="contract-q"
         placeholder="分析问题(如:上周销售日报)"
       />
-      <button onclick="callContract()">建契约</button>
+      <div class="form-grid">
+        <label
+          >报告类型
+          <select id="f-report-type">
+            <option value="">自动(由需求推断)</option>
+            <option value="daily_kpi">日报 daily_kpi</option>
+            <option value="weekly_kpi">周报 weekly_kpi</option>
+            <option value="diagnostic">诊断 diagnostic</option>
+            <option value="recommendation">建议 recommendation</option>
+            <option value="data_quality">数据质量 data_quality</option>
+            <option value="funnel">漏斗 funnel</option>
+            <option value="cohort">cohort cohort</option>
+            <option value="risk_anomaly">风险异常 risk_anomaly</option>
+            <option value="ad_hoc">临时 ad_hoc</option>
+          </select>
+        </label>
+        <label
+          >受众
+          <select id="f-audience">
+            <option value="">自动</option>
+            <option value="business_stakeholder">业务方</option>
+            <option value="technical">技术方</option>
+          </select>
+        </label>
+        <label
+          >频率 cadence
+          <select id="f-cadence">
+            <option value="">—</option>
+            <option value="daily">日</option>
+            <option value="weekly">周</option>
+            <option value="monthly">月</option>
+            <option value="ad_hoc">临时</option>
+          </select>
+        </label>
+        <label
+          >周期 period
+          <input type="text" id="f-period" placeholder="如 2026-W29 / 上周" />
+        </label>
+        <label
+          >对比基线
+          <select id="f-baseline">
+            <option value="">—</option>
+            <option value="wow">环比 WoW</option>
+            <option value="mom">环比 MoM</option>
+            <option value="yoy">同比 YoY</option>
+            <option value="target">对目标</option>
+          </select>
+        </label>
+        <label
+          >输出语言
+          <select id="f-language">
+            <option value="">自动</option>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+      </div>
+      <button onclick="callContract()">生成契约预览</button>
       <pre id="contract-output"></pre>
     </div>
 
     <div class="panel">
-      <h2>4. 报告 QA</h2>
+      <h2>4. 报告 QA(draft 检查)</h2>
       <textarea
         id="qa-input"
         rows="6"
@@ -138,7 +405,7 @@
         已产出</label
       >
       <button onclick="callQA()">跑 QA</button>
-      <pre id="qa-output"></pre>
+      <div id="qa-output"></div>
     </div>
 
     <div class="panel">
@@ -155,9 +422,69 @@
       <iframe id="art-frame" sandbox="allow-scripts"></iframe>
     </div>
 
+    <div class="panel">
+      <h2>7. 反馈(feedback)</h2>
+      <div class="fb-row">
+        <button
+          type="button"
+          class="fb-btn fb-good"
+          data-tag="good"
+          onclick="pickTag(this)"
+        >
+          👍 Good
+        </button>
+        <button
+          type="button"
+          class="fb-btn fb-bad"
+          data-tag="bad"
+          onclick="pickTag(this)"
+        >
+          👎 Bad
+        </button>
+        <button
+          type="button"
+          class="fb-btn fb-rephrase"
+          data-tag="needs_fix"
+          onclick="pickTag(this)"
+        >
+          ✏️ Rephrase
+        </button>
+      </div>
+      <input
+        type="text"
+        id="fb-comment"
+        placeholder="可选短评(如:GMV 口径未确认)"
+        style="margin-top: 8px"
+      />
+      <div class="fb-row">
+        <button type="button" onclick="submitFeedback()">提交反馈</button>
+        <span id="fb-status" class="fb-status"></span>
+      </div>
+    </div>
+
     <script>
+      // 主题切换(#30):localStorage 持久,默认随系统 prefers-color-scheme。
+      (function () {
+        const saved = localStorage.getItem("daa-theme");
+        if (saved) document.body.classList.add(saved);
+      })();
+      function toggleTheme() {
+        const b = document.body;
+        const isDark = b.classList.contains("dark");
+        b.classList.remove("dark", "light");
+        const next = isDark ? "light" : "dark";
+        b.classList.add(next);
+        localStorage.setItem("daa-theme", next);
+      }
+
+      // Mounted under /workbench by the unified server app (server/app.py mounts web).
+      // Derive the base so fetches work whether served at / or /workbench/.
+      const BASE = location.pathname.startsWith("/workbench")
+        ? "/workbench"
+        : "";
+
       async function post(url, body) {
-        const res = await fetch(url, {
+        const res = await fetch(BASE + url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -183,10 +510,30 @@
           2,
         );
       }
+      // 读取意图表单(P1-3.6):空值字段不传给后端(后端有各自默认/回退)。
+      function intentFields() {
+        const g = (id) => document.getElementById(id).value.trim();
+        const fields = {
+          question: g("contract-q"),
+          report_type: g("f-report-type"),
+          audience: g("f-audience"),
+          language: g("f-language"),
+        };
+        // cadence/period/baseline 后端契约端点当前不消费,随 question 注入提示。
+        const extra = [
+          ["频率", g("f-cadence")],
+          ["周期", g("f-period")],
+          ["对比基线", g("f-baseline")],
+        ]
+          .filter(([, v]) => v)
+          .map(([k, v]) => k + ":" + v)
+          .join(";");
+        if (extra)
+          fields.question = (fields.question || "") + "【" + extra + "】";
+        return Object.fromEntries(Object.entries(fields).filter(([, v]) => v));
+      }
       async function callContract() {
-        const r = await post("/api/report/contract", {
-          question: document.getElementById("contract-q").value,
-        });
+        const r = await post("/api/report/contract", intentFields());
         document.getElementById("contract-output").textContent = JSON.stringify(
           r,
           null,
@@ -201,26 +548,63 @@
           artifact_exists: artifact,
         });
         const el = document.getElementById("qa-output");
-        el.textContent = "";
+        el.innerHTML = "";
+        lastReadiness = r.readiness;
         const badgeEl = document.createElement("span");
         badgeEl.className = "readiness r-" + r.readiness;
-        badgeEl.textContent = r.readiness;
-        el.append(
-          badgeEl,
-          " " +
-            r.findings.length +
-            " findings\n\n" +
-            JSON.stringify(
-              r.findings.map((f) => f.severity + ": " + f.code),
-              null,
-              2,
-            ),
+        badgeEl.textContent =
+          {
+            draft: "draft 草稿",
+            needs_review: "needs review 待审",
+            ready: "ready 就绪",
+          }[r.readiness] || r.readiness;
+        el.appendChild(badgeEl);
+        el.appendChild(
+          document.createTextNode(" " + r.findings.length + " findings"),
+        );
+        // 按 severity 排序渲染:blocker > high > medium > info。
+        const order = { blocker: 0, high: 1, medium: 2, info: 3 };
+        const sorted = [...r.findings].sort(
+          (a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9),
+        );
+        for (const f of sorted) {
+          const div = document.createElement("div");
+          div.className = "qa-finding sev-" + f.severity;
+          let html =
+            '<span class="sev">' +
+            escapeHtml(f.severity) +
+            "</span>" +
+            escapeHtml(f.message) +
+            ' <span class="code">' +
+            escapeHtml(f.code) +
+            (f.block_id ? " · " + escapeHtml(f.block_id) : "") +
+            "</span>";
+          if (f.suggested_fix)
+            html +=
+              '<div class="fix">→ 建议:' +
+              escapeHtml(f.suggested_fix) +
+              "</div>";
+          div.innerHTML = html;
+          el.appendChild(div);
+        }
+      }
+      function escapeHtml(s) {
+        return String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
         );
       }
       async function callTemplate() {
         const text = document.getElementById("tpl-input").value;
         const res = await fetch(
-          "/api/template?text=" + encodeURIComponent(text),
+          BASE + "/api/template?text=" + encodeURIComponent(text),
         );
         const r = await res.json();
         document.getElementById("tpl-output").textContent = JSON.stringify(
@@ -232,7 +616,55 @@
       function loadArtifact() {
         const name = document.getElementById("art-input").value;
         document.getElementById("art-frame").src =
-          "/artifacts/" + encodeURIComponent(name);
+          BASE + "/artifacts/" + encodeURIComponent(name);
+      }
+
+      // ---- 反馈(P1-3.8):Good/Bad/Rephrase + 可选短评 → /api/feedback ----
+      let fbTag = null;
+      let lastReadiness = null;
+
+      function pickTag(btn) {
+        fbTag = btn.dataset.tag;
+        document
+          .querySelectorAll(".fb-btn")
+          .forEach((b) => b.classList.toggle("active", b === btn));
+        setFbStatus("", "");
+      }
+
+      function setFbStatus(text, cls) {
+        const el = document.getElementById("fb-status");
+        el.textContent = text;
+        el.className = "fb-status " + cls;
+      }
+
+      async function submitFeedback() {
+        if (!fbTag) {
+          setFbStatus("请先选 Good / Bad / Rephrase", "fb-err");
+          return;
+        }
+        const body = {
+          tags: [fbTag],
+          comment: document.getElementById("fb-comment").value.trim(),
+          readiness: lastReadiness || "",
+        };
+        try {
+          const res = await fetch(BASE + "/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const r = await res.json();
+          if (!res.ok) throw new Error(r.detail || res.statusText);
+          if (!r.stored) throw new Error("backend did not confirm store");
+          setFbStatus("已记录 ✓", "fb-ok");
+          document.getElementById("fb-comment").value = "";
+          fbTag = null;
+          document
+            .querySelectorAll(".fb-btn")
+            .forEach((b) => b.classList.remove("active"));
+        } catch (e) {
+          setFbStatus("提交失败: " + (e.message || e), "fb-err");
+        }
       }
     </script>
   </body>
