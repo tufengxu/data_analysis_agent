@@ -9,12 +9,12 @@
 
 ## 推进主线（顺序执行，依赖链：Wave 1 → 2 → 3）
 
-| Wave | 工作                                         | 状态                                                                                                                             |
-| ---- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | 清理陈旧分支 + 本 backlog                    | ✅ 2026-07-20                                                                                                                    |
-| 1    | P1-2 工作区 + P1-1 安全基线 + 审计安全延后项 | ✅ PR #8/#9/#10（工作区/安全基线/doctor）                                                                                        |
-| 2    | P1-3 Web Workbench                           | ⚠️ Slice 1（live-agent SSE run，PR #11）✅；**前端 UI 全部移交 `frontend-ui-todo.md`（Kimi-K3 做）**；剩余非 UI：unsafe 公开旗标 |
-| 3    | G1 自进化真闭环（一次真实晋升）              | ❌ 未开始（下一步）                                                                                                              |
+| Wave | 工作                                         | 状态                                                                                                                                                                                                   |
+| ---- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | 清理陈旧分支 + 本 backlog                    | ✅ 2026-07-20                                                                                                                                                                                          |
+| 1    | P1-2 工作区 + P1-1 安全基线 + 审计安全延后项 | ✅ PR #8/#9/#10（工作区/安全基线/doctor）                                                                                                                                                              |
+| 2    | P1-3 Web Workbench                           | ✅ Slice 1 live-agent SSE run（PR #11）+ **前端 UI 全套**（PR #32：审批/upload/project/报告表单+QA/反馈/artifact 预览/统一 workbench/暗色响应式 + 安全加固；闭合 #24–#31）。剩余非 UI：unsafe 公开旗标 |
+| 3    | G1 自进化真闭环（一次真实晋升）              | ❌ 未开始（下一步）                                                                                                                                                                                    |
 
 ## Wave 1 范围明细
 
@@ -105,3 +105,11 @@
 - ✅ PR#3–5,7 CI（quality_gate / step summary / dep-drift / mypy fix）
 - ✅ 报告交付 wave1–8 + reporting/causal/chart_render 领域层接活模型
 - ✅ 自进化五子系统骨架（telemetry/memory/skills/evolution）+ 人审门接 CI + 轨迹磁盘 cap + Memory/Profile 并发锁
+- ✅ **Phase 1 迭代（2026-07-20→28，PR #8–#32 + #38，全 merged 到 main）**：
+  - Wave 1：P1-2 工作区（#8）/ P1-1 local_safe+sensitive-mode（#9）/ doctor（#10）
+  - Wave 2：P1-3 live SSE run（#11）/ **Web Workbench 前端 UI 全套 + 安全加固**（#32，闭合 #24–#31）
+  - Wave 3 Slice 1：skill 晋升账本（#12）/ G1-2 真实 runtime 测试（#13）
+  - P1-4 工具硬化：data_quality（#14）/ join_planner（#15）/ metric_contract（#16）/ nl_query schema-aware+secret guard（#20）/ Excel header-health（#21）
+  - 审计小项：§3.6 evidence resolution（#17）/ overlay 域化（#18）/ rephrase 加固（#19）/ recovery transient retry（#22，重开 PR #37）/ P0-3 chart provenance（#23）
+  - skill-ledger 2 minor 跟进（#38）
+  - 每个 PR 均过独立子 Agent 对抗审查收敛（0 blocking/major）+ quality_gate 绿
