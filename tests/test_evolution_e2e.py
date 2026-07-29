@@ -82,7 +82,11 @@ def test_self_evolution_closed_loop_trajectory_to_active_skill(tmp_path: Path) -
         return {
             "name": "cohort_analysis",
             "description": "用户留存/同期群分析",
-            "keywords": ["留存", "cohort", "同期群"],
+            # "留存率" is a domain-specific term NO built-in skill claims, so the
+            # routing assertion below (match_best) is robust — the evolved skill
+            # wins on a unique keyword, not a thin description-string margin over
+            # ReportGenerationSkill (which shares 留存/cohort/同期群).
+            "keywords": ["留存", "cohort", "同期群", "留存率"],
             "allowed_tools": ["read_file", "python_analysis"],
             "instructions": "1. 解析日期列\n2. 构建同期群矩阵\n3. 计算留存率",
         }
@@ -134,7 +138,9 @@ def test_self_evolution_closed_loop_trajectory_to_active_skill(tmp_path: Path) -
     assert "同期群矩阵" in loaded.instructions  # synthesized instructions preserved
 
     # 9. ...and the registry ROUTES a relevant query to it (match_best), beating
-    #    the built-in skills — the closed loop changes agent routing.
-    matched = registry.match_best("做留存 cohort 同期群分析")
+    #    the built-in skills — the closed loop changes agent routing. The query
+    #    carries "留存率" (a keyword unique to the evolved skill) so the win is
+    #    robust, not a thin description-margin tie with ReportGenerationSkill.
+    matched = registry.match_best("计算留存率 做留存 cohort 同期群分析")
     assert matched is not None
     assert matched.name == "cohort_analysis"
