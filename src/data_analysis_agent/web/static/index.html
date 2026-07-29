@@ -482,6 +482,8 @@
       const BASE = location.pathname.startsWith("/workbench")
         ? "/workbench"
         : "";
+      // CSRF token, server 渲染时注入(web/app.py index());反馈请求回显。
+      const CSRF = "__DAA_CSRF__";
 
       async function post(url, body) {
         const res = await fetch(BASE + url, {
@@ -650,7 +652,10 @@
         try {
           const res = await fetch(BASE + "/api/feedback", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "X-DAA-Token": CSRF,
+            },
             body: JSON.stringify(body),
           });
           const r = await res.json();
