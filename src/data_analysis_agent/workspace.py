@@ -328,6 +328,8 @@ class Project:
             if locked and fh is not None:
                 with contextlib.suppress(OSError):
                     fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                with contextlib.suppress(OSError):
+                    fh.close()  # match MemoryStore._locked / ProfileStore._locked (no fd leak)
 
     def add_run(self, run: RunManifest) -> Path:
         """Persist a run manifest and append its id to the project index.
