@@ -122,6 +122,17 @@ def test_evaluator_apply_without_metrics_preserves_score(tmp_path: Path) -> None
     assert record["eval_score"] == 0.8
 
 
+def test_evaluator_apply_handles_explicit_metrics_none(tmp_path: Path) -> None:
+    """A verdict carrying an explicit ``metrics: None`` (not just absent) must not
+    AttributeError on ``.get('pass_rate')`` — the ``or {}`` guard (#40 review)."""
+    skills = tmp_path / "skills"
+    _save(skills, "s1", "candidate")
+    evaluator = SkillEvaluator(tmp_path / "tasks", skills, lambda t, s: None)
+    # Explicit metrics: None used to make (verdict["metrics"]).get(...) crash.
+    out = evaluator.apply({"skill": "s1", "decision": "promote", "metrics": None})
+    assert out is not None  # no AttributeError; candidate → proposed_promote still applies
+
+
 def test_evaluator_apply_skips_ledger_when_save_refused(tmp_path: Path) -> None:
     """MINOR #1: when save_skill refuses the write (instructions carry an injection
     marker), apply() returns None and writes NO ledger entry — the governance
