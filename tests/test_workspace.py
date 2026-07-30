@@ -71,6 +71,30 @@ def test_init_is_idempotent_does_not_clobber(home: Path) -> None:
     assert reinit.manifest.runs == ["r1"]  # index preserved
 
 
+def test_add_run_rereads_manifest_picks_up_concurrent_appends(home: Path) -> None:
+    """add_run re-reads the manifest fresh inside its cross-process lock, so a run
+    id another process appended to disk is NOT lost. Pre-fix, a stale in-memory
+    manifest meant the last rewrite silently dropped the concurrent run id
+    (backlog concurrency bug)."""
+    Project.init(
+        "demo",
+        home=home,
+        authorized_paths=["/d.csv"],
+        model="m",
+        preset="local_safe",
+        now=lambda: FIXED_NOW,
+    )
+    p1 = Project.open("demo", home=home)
+    p1.add_run(_run("a", "demo"))  # disk manifest runs: [a]
+    # A second process appends 'c' to disk AFTER p1 last read → p1.manifest is stale ([a]).
+    other = Project.open("demo", home=home)
+    other.add_run(_run("c", "demo"))  # disk: [a, c]
+    # p1 adds 'b' from its stale in-memory manifest; the fix re-reads disk first.
+    p1.add_run(_run("b", "demo"))
+    final = Project.open("demo", home=home).manifest.runs
+    assert set(final) == {"a", "b", "c"}  # 'c' survives — not lost to last-write-wins
+
+
 def test_open_missing_raises(home: Path) -> None:
     with pytest.raises(KeyError):
         Project.open("nope", home=home)

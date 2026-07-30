@@ -13,10 +13,11 @@ exactly as before.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -294,17 +295,57 @@ class Project:
         return found
 
     # --- mutation ---------------------------------------------------------
+    @property
+    def _lock_path(self) -> Path:
+        return self.manifest_path.parent / ".project.lock"
+
+    @contextlib.contextmanager
+    def _locked(self) -> Iterator[None]:
+        """Cross-process advisory lock (POSIX flock) around the manifest
+        read-modify-write in ``add_run``. Without it, two concurrent CLI sessions
+        each hold a stale in-memory manifest and the last rewrite silently loses
+        the other's run id. Mirrors ``MemoryStore._locked``; degrades to an
+        unlocked mutate on a read-only filesystem (no concurrent writes possible
+        there anyway). Backlog concurrency item.
+        """
+        import fcntl
+
+        fh = None
+        locked = False
+        try:
+            self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            fh = self._lock_path.open("w", encoding="utf-8")
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            locked = True
+        except OSError:
+            if fh is not None:
+                with contextlib.suppress(OSError):
+                    fh.close()
+                fh = None
+        try:
+            yield
+        finally:
+            if locked and fh is not None:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
     def add_run(self, run: RunManifest) -> Path:
         """Persist a run manifest and append its id to the project index.
 
-        Both writes are atomic (tmp + os.replace); the index append is last so a
-        crash never records a run id whose manifest failed to land.
+        Both writes are atomic (tmp + os.replace). The run manifest file is unique
+        per run_id (no cross-run conflict); the project index append is a
+        read-modify-write guarded by ``_locked`` AND re-read fresh inside the lock,
+        so two concurrent sessions can't lose each other's run id (last-write-wins
+        on stale in-memory manifests).
         """
         run_path = self.run_manifest_path(run.run_id)
         _atomic_write_json(run_path, run.to_dict())
-        if run.run_id not in self.manifest.runs:
-            self.manifest.runs.append(run.run_id)
-            _atomic_write_json(self.manifest_path, self.manifest.to_dict())
+        with self._locked():
+            manifest = ProjectManifest.from_dict(_load_json(self.manifest_path))
+            if run.run_id not in manifest.runs:
+                manifest.runs.append(run.run_id)
+                _atomic_write_json(self.manifest_path, manifest.to_dict())
+            self.manifest = manifest  # keep this instance's cache current
         return run_path
 
     def history(self) -> list[RunManifest]:
