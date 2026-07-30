@@ -353,8 +353,9 @@ class SkillEvaluator:
             skill.status = "proposed_promote" if decision == "promote" else "retired"
             # Only refresh eval_score when the verdict actually carries one — a
             # re-apply verdict without metrics used to clobber a previously-pinned
-            # score to None (#38 review observation).
-            new_score = verdict.get("metrics", {}).get("pass_rate")
+            # score to None (#38 review observation). `or {}` also guards a verdict
+            # that carries an explicit `metrics: None` (review observation on #40).
+            new_score = (verdict.get("metrics") or {}).get("pass_rate")
             if new_score is not None:
                 skill.eval_score = new_score
             saved = save_skill(self.skills_dir, skill.to_dict())
@@ -375,7 +376,7 @@ class SkillEvaluator:
                     from_status=from_status,
                     to_status=skill.status,
                     eval_score=skill.eval_score,
-                    metrics=verdict.get("metrics", {}),
+                    metrics=verdict.get("metrics") or {},
                 )
             return saved
         return None
