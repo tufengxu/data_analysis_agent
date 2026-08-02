@@ -74,10 +74,10 @@ python -m data_analysis_agent.server --host 0.0.0.0 --unsafe
 - **artifact 预览路径守卫**：预览被限定在 workspace 的 artifacts 子树，防止路径穿越
   读到任意文件。
 - **CSP sandbox**：artifact 页在独立 opaque origin 渲染，无法反向驱动 agent/审批端点。
-- **CSRF token**：agent 驱动类端点 `/api/run/stream` 与 `/api/approval` 校验 per-session
-  `X-DAA-Token`（served UI 内嵌 token，请求须回显），防止同源 artifact 页静默驱动 agent/
-  审批。注意：upload、feedback 端点不校验此 token——它们的暴露面由 localhost-only +
-  CSP sandbox 兜底。
+- **CSRF token**：所有变更性端点 `/api/run/stream`、`/api/approval`、`/api/upload`、
+  `/api/feedback` 均校验 per-session `X-DAA-Token`（served UI 内嵌 token，请求须回显；
+  自定义头让跨源 form-POST 无法伪造），防止同源 artifact 页或跨站表单静默驱动 agent/
+  审批、种植数据或假反馈。
 
 ---
 
