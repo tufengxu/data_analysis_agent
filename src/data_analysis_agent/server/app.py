@@ -55,6 +55,22 @@ def _safe_upload_name(name: str) -> str | None:
     return name
 
 
+def _default_workbench_config() -> AgentConfig:
+    """Default config for the real (non-test) workbench: ``local_safe`` preset.
+
+    The Web workbench must be deny-by-default out of the box (roadmap §8:
+    "Local-safe mode is the default for Web Workbench"). ``AgentConfig.from_env``
+    leaves ``permission_preset=""``, which builds NO permission engine (everything
+    allowed) — so a default-started workbench would run mutators with no approval.
+    Pinning ``local_safe`` here makes read-only tools ALLOW, known mutators ASK
+    (surfaced to the browser approval UI; timeout = deny), unknown tools DENY.
+    A caller-supplied ``config`` is respected unchanged (tests inject their own).
+    """
+    from dataclasses import replace
+
+    return replace(AgentConfig.from_env(), permission_preset="local_safe")
+
+
 def create_app(
     config: AgentConfig | None = None,
     *,
@@ -68,7 +84,7 @@ def create_app(
     under /workbench so one app (single 127.0.0.1 port) serves BOTH the live run
     and the report/QA/artifact/feedback panels — the product's single workbench.
     """
-    config = config or AgentConfig.from_env()
+    config = config or _default_workbench_config()
     app = FastAPI(title="DataAnalysisAgent Workbench", version="0.1.0")
     app.state.config = config
     app.state.client = client
@@ -236,7 +252,7 @@ async def _stream(
     approval_handler: WebApprovalHandler,
     artifact_dir: Path,
 ) -> Any:
-    """Run one agent turn and yield SSE ``data: <json>\\n\\n`` frames."""
+    """Run one agent turn and yield SSE ``data: <json>\n\n`` frames."""
     # Fail closed: drop blank/whitespace entries, then require ≥1 real path.
     # With none, the agent would otherwise default to the server process's cwd
     # (the CLI-era convenience) — a footgun for a Web launch. `Path("")` resolves

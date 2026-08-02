@@ -72,6 +72,29 @@ def test_index_serves_html() -> None:
     assert "Workbench" in r.text
 
 
+def test_default_config_is_local_safe() -> None:
+    # Roadmap §8: local_safe is the Web Workbench default. When no config is
+    # supplied (real server start), create_app must pin permission_preset so the
+    # runtime builds a deny-by-default engine — otherwise mutators run unguarded.
+    from data_analysis_agent.server.app import create_app
+
+    app = create_app()
+    assert app.state.config.permission_preset == "local_safe"
+
+
+def test_supplied_config_is_respected() -> None:
+    # A caller-supplied config (tests, custom embeds) is used unchanged — the
+    # local_safe default must NOT clobber an explicit choice.
+    from data_analysis_agent.server.app import create_app
+
+    app = create_app(_config())
+    assert app.state.config.permission_preset == ""
+
+    custom = AgentConfig(api_key="x", permission_preset="local_dev")
+    app2 = create_app(custom)
+    assert app2.state.config.permission_preset == "local_dev"
+
+
 def test_run_stream_400_when_no_api_key() -> None:
     """Missing API key → a clean 400, not a mid-stream SDK error frame."""
     from data_analysis_agent.server.app import create_app

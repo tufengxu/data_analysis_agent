@@ -46,6 +46,15 @@ data_analysis_agent/
 │   ├── synthesizer.py     # Trajectory clusters → candidate skills (overfit guards)
 │   ├── evaluator.py       # Fixture rerun + A/B + sample gate → promote/rollback
 │   └── __main__.py        # `python -m data_analysis_agent.evolution`
+├── workspace.py           # Project workspace: per-project root + run manifests
+├── server/                # Live-agent Web Workbench (FastAPI + SSE)
+│   ├── app.py             # /api/run/stream + /api/upload + /api/approval + static index
+│   ├── approval.py        # Web approval channel (timeout = deny)
+│   └── bind.py            # localhost-only bind policy (fail-closed without --unsafe)
+├── web/                   # Report workbench (need → context → contract → QA)
+│   └── app.py             # Report pipeline panels + safe artifact preview + feedback
+├── causal/                # Causal decision domain layer (descriptive/corr/exp/causal levels)
+├── reporting/             # Reporting domain layer (contract, QA, templates, overlays)
 ├── context/               # Context management and compression
 │   └── compression.py     # 5-level compression pipeline
 ├── sampling/              # Sampling-based compaction for large tool results
@@ -61,6 +70,16 @@ data_analysis_agent/
 ## Key Features
 
 - **ReAct AgentLoop**: Single `while` loop with 9-step pipeline per turn
+- **Web Workbench**: Browser UI for live runs — SSE progress, tool approval (timeout = deny),
+  artifact preview, report QA, feedback. Localhost-only by default; `local_safe` preset
+- **Project Workspace**: Per-project root (`~/.daa/projects/<id>`) with authorized paths,
+  session state, artifacts, and a manifest per run — a durable local workbench
+- **Local-Safe Security**: deny-by-default preset, path-scoped tools (file/profile/python/
+  artifacts/uploads), explicit directory authorization, optional sensitive mode that
+  suppresses memory writes and trajectory input capture
+- **Causal Decision MVP**: separates descriptive / correlation / experimental / causal claim
+  levels; A/B experiment readout with balance checks, lift estimates, caveats, bounded
+  recommendations; refuses to upgrade correlation-only evidence into causal claims
 - **Multi-Turn Sessions**: `AgentSession` carries history across turns; interactive mode
   shares one session/kernel/event-loop, `--persist` resumes across processes
 - **Persistent Kernel**: `python_analysis` state (variables, DataFrames) survives across
@@ -136,6 +155,39 @@ python -m data_analysis_agent -i
 python -m data_analysis_agent -c config.json "Your query here"
 ```
 
+**Inside a project workspace:**
+
+```bash
+data-agent project init sales --path ./data --authorize ./data
+data-agent --project sales "Analyze monthly trends and write a report"
+```
+
+**Web Workbench (browser UI):**
+
+```bash
+python -m data_analysis_agent.server
+# open http://127.0.0.1:8000
+```
+
+**Health check:**
+
+```bash
+data-agent doctor
+```
+
+## User Guide
+
+Step-by-step guides for the main workflows:
+
+- [Local-safe mode (permissions & privacy)](docs/user-guide/local-safe.md)
+- [Web Workbench](docs/user-guide/web-workbench.md)
+- [Project workspace](docs/user-guide/workspace.md)
+- [Evolution workflow (self-evolution)](docs/user-guide/evolution.md)
+- [Troubleshooting](docs/user-guide/troubleshooting.md)
+
+**Release notes**: [v0.1.0-rc1 (Phase 1 RC)](docs/RELEASE-v0.1.0-rc1.md) — includes the
+honest **sandbox threat model** (read before handling sensitive data or exposing the Web UI).
+
 ## Programmatic Usage
 
 ```python
@@ -161,23 +213,32 @@ asyncio.run(main())
 
 ## Built-in Tools
 
-| Tool              | Purpose                                                      |
-| ----------------- | ------------------------------------------------------------ |
-| `file_read`       | Read local files with offset/limit                           |
-| `python_analysis` | Execute Python in the persistent kernel (stateless fallback) |
-| `nl_query`        | Natural language to structured query                         |
-| `visualization`   | Generate matplotlib / seaborn / plotly charts                |
-| `retrieve_result` | Page through the original of a summarized tool result        |
-| `html_report`     | Render a self-contained H5 HTML report with ECharts charts   |
+| Tool                                                                                            | Purpose                                                      |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `read_file`                                                                                     | Read local files with offset/limit (path-scoped)             |
+| `data_profile`                                                                                  | Read-only structural discovery: CSV/TSV/Parquet/Excel sheets |
+| `data_quality`                                                                                  | Read-only quality checks: missing/dup/uniqueness/outliers    |
+| `join_planner`                                                                                  | Read-only cross-table join advisory (keys, relations, risks) |
+| `metric_contract`                                                                               | Read-only metric-definition canonicalizer (MetricSpec)       |
+| `python_analysis`                                                                               | Execute Python in the persistent kernel (stateless fallback) |
+| `nl_query`                                                                                      | Natural language to structured query (schema-aware)          |
+| `visualization`                                                                                 | Generate matplotlib / seaborn / plotly charts                |
+| `chart_render`                                                                                  | Structured ChartSpec → ECharts option + JSON artifact        |
+| `html_report`                                                                                   | Render a self-contained H5 HTML report with ECharts charts   |
+| `retrieve_result`                                                                               | Page through the original of a summarized tool result        |
+| `report_need` / `report_context` / `report_contract`                                            | Reporting pipeline (need → context → contract)               |
+| `causal_contract` / `causal_qa` / `experiment_readout` / `causal_action_plan` / `causal_report` | Causal decision pipeline (Stage 1)                           |
 
 ## Built-in Skills
 
-| Skill                  | Description                                            |
-| ---------------------- | ------------------------------------------------------ |
-| `descriptive_analysis` | Mean, median, std, percentiles, distributions          |
-| `correlation_analysis` | Pearson / Spearman matrices, heatmaps                  |
-| `trend_analysis`       | Time-series decomposition, seasonality, forecasting    |
-| `report_generation`    | H5 HTML analysis report with ECharts charts and tables |
+| Skill                      | Description                                             |
+| -------------------------- | ------------------------------------------------------- |
+| `descriptive_analysis`     | Mean, median, std, percentiles, distributions           |
+| `correlation_analysis`     | Pearson / Spearman matrices, heatmaps                   |
+| `trend_analysis`           | Time-series decomposition, seasonality, forecasting     |
+| `report_generation`        | H5 HTML analysis report with ECharts charts and tables  |
+| `joint_analysis`           | Multi-sheet / multi-file discover → join → analyse      |
+| `causal_decision_analysis` | Causal/experiment/action routing with a forced workflow |
 
 ## Development
 
