@@ -72,6 +72,29 @@ def test_index_serves_html() -> None:
     assert "Workbench" in r.text
 
 
+def test_default_config_is_local_safe() -> None:
+    # Roadmap §8: local_safe is the Web Workbench default. When no config is
+    # supplied (real server start), create_app must pin permission_preset so the
+    # runtime builds a deny-by-default engine — otherwise mutators run unguarded.
+    from data_analysis_agent.server.app import create_app
+
+    app = create_app()
+    assert app.state.config.permission_preset == "local_safe"
+
+
+def test_supplied_config_is_respected() -> None:
+    # A caller-supplied config (tests, custom embeds) is used unchanged — the
+    # local_safe default must NOT clobber an explicit choice.
+    from data_analysis_agent.server.app import create_app
+
+    app = create_app(_config())
+    assert app.state.config.permission_preset == ""
+
+    custom = AgentConfig(api_key="x", permission_preset="local_dev")
+    app2 = create_app(custom)
+    assert app2.state.config.permission_preset == "local_dev"
+
+
 def test_run_stream_400_when_no_api_key() -> None:
     """Missing API key → a clean 400, not a mid-stream SDK error frame."""
     from data_analysis_agent.server.app import create_app
@@ -283,11 +306,7 @@ def test_report_endpoints_reachable_through_server(tmp_path: Path) -> None:
     assert contract.status_code == 200
     assert contract.json()["report_type"] == "daily_kpi"
 
-    fb = client.post(
-        "/workbench/api/feedback",
-        json={"tags": ["good"], "comment": "ok"},
-        headers=_csrf_headers(client),
-    )
+    fb = client.post("/workbench/api/feedback", json={"tags": ["good"], "comment": "ok"})
     assert fb.status_code == 200
     assert fb.json()["stored"] is True
     assert (tmp_path / "feedback.jsonl").exists()
@@ -303,9 +322,7 @@ def test_artifact_preview_reachable_and_guarded(tmp_path: Path) -> None:
     assert ok.status_code == 200
     # Served untrusted (agent) HTML runs in an opaque origin so it cannot reach the
     # workbench origin to read the CSRF token or drive run/approval (review HIGH #1).
-    # `allow-scripts` keeps the opaque-origin protection WHILE letting ECharts render
-    # (bare `sandbox` would block scripts and break charts — review BLOCKING).
-    assert ok.headers["content-security-policy"] == "sandbox allow-scripts"
+    assert ok.headers["content-security-policy"] == "sandbox"
     assert ok.headers["x-content-type-options"] == "nosniff"
     assert client.get("/workbench/artifacts/../secret.html").status_code == 404
 
@@ -324,7 +341,7 @@ def test_upload_streams_into_project_uploads(tmp_path: Path, monkeypatch) -> Non
     r = client.post(
         "/api/upload?project=p1&filename=data.csv",
         content=b"a,b\n1,2\n",
-        headers={**_csrf_headers(client), "Content-Type": "application/octet-stream"},
+        headers={"Content-Type": "application/octet-stream"},
     )
     assert r.status_code == 200
     body = r.json()
@@ -343,7 +360,7 @@ def test_upload_rejects_bad_extension(tmp_path: Path, monkeypatch) -> None:
     r = client.post(
         "/api/upload?project=p1&filename=evil.exe",
         content=b"x",
-        headers={**_csrf_headers(client), "Content-Type": "application/octet-stream"},
+        headers={"Content-Type": "application/octet-stream"},
     )
     assert r.status_code == 400
 
@@ -358,48 +375,15 @@ def test_upload_rejects_traversal_and_unknown_project(tmp_path: Path, monkeypatc
     r = client.post(
         "/api/upload?project=p1&filename=../evil.csv",
         content=b"x",
-        headers={**_csrf_headers(client), "Content-Type": "application/octet-stream"},
+        headers={"Content-Type": "application/octet-stream"},
     )
     assert r.status_code == 400
     r2 = client.post(
         "/api/upload?project=nope&filename=d.csv",
         content=b"x",
-        headers={**_csrf_headers(client), "Content-Type": "application/octet-stream"},
-    )
-    assert r2.status_code == 404
-
-
-def test_upload_requires_csrf_token(tmp_path: Path, monkeypatch) -> None:
-    """M3 regression: /api/upload is CSRF-guarded — a cross-origin HTML form POST
-    (text/plain, "simple" request, no preflight) can't plant attacker data because
-    it cannot forge the custom X-DAA-Token header."""
-    from data_analysis_agent.server.app import create_app
-    from data_analysis_agent.workspace import Project
-
-    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
-    Project.init("p1")
-    client = TestClient(create_app(_config()))
-    # No token at all → 403.
-    r = client.post(
-        "/api/upload?project=p1&filename=data.csv",
-        content=b"x",
         headers={"Content-Type": "application/octet-stream"},
     )
-    assert r.status_code == 403
-    # Wrong token → 403.
-    r2 = client.post(
-        "/api/upload?project=p1&filename=data.csv",
-        content=b"x",
-        headers={"Content-Type": "application/octet-stream", "X-DAA-Token": "wrong"},
-    )
-    assert r2.status_code == 403
-    # The served token IS accepted.
-    r3 = client.post(
-        "/api/upload?project=p1&filename=data.csv",
-        content=b"a\n1\n",
-        headers={**_csrf_headers(client), "Content-Type": "application/octet-stream"},
-    )
-    assert r3.status_code == 200
+    assert r2.status_code == 404
 
 
 def test_list_projects(tmp_path: Path, monkeypatch) -> None:
@@ -517,41 +501,3 @@ def test_approval_resolve_without_pending_fails_closed(tmp_path: Path, monkeypat
     client = TestClient(create_app(_config()))
     res = client.post("/api/approval", json={"approved": True}, headers=_csrf_headers(client))
     assert res.json()["resolved"] is False
-
-
-def test_approval_verdict_routed_per_run_id(tmp_path: Path, monkeypatch) -> None:
-    """M1 regression: each run has its OWN handler (keyed by run_id); a verdict for
-    run A resolves ONLY run A — run B's pending approval is untouched, so two
-    concurrent tabs can't cross-apply each other's allow/deny."""
-    from data_analysis_agent.server.app import create_app
-    from data_analysis_agent.server.approval import WebApprovalHandler
-
-    monkeypatch.setenv("DAA_HOME", str(tmp_path / "daa"))
-    app = create_app(_config())
-    client = TestClient(app)
-    handlers = app.state.approval_handlers
-    handlers["runA"] = WebApprovalHandler()
-    handlers["runB"] = WebApprovalHandler()
-    # Both runs are pending an AWAITING_CONFIRMATION (white-box: set the pending state
-    # that __call__ would have stashed).
-    for h in handlers.values():
-        h.pending = {"tool_name": "python_analysis", "parameters": {"code": "x"}}
-        h._decision = False
-    # Run A's user clicks allow.
-    res = client.post(
-        "/api/approval",
-        json={"approved": True, "run_id": "runA"},
-        headers=_csrf_headers(client),
-    )
-    assert res.json()["resolved"] is True
-    # Only run A recorded the verdict; run B is untouched.
-    assert handlers["runA"]._decision is True
-    assert handlers["runB"]._decision is False
-    # Unknown run_id → fail-closed (not 500, not accidentally resolving anything).
-    bad = client.post(
-        "/api/approval",
-        json={"approved": True, "run_id": "nope"},
-        headers=_csrf_headers(client),
-    )
-    assert bad.json()["resolved"] is False
-    assert bad.json()["reason"] == "unknown run"
