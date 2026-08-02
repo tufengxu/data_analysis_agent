@@ -122,6 +122,10 @@ Phase 1 正式版。
 - **文档**：新增 `docs/user-guide/`（5 篇）+ README 刷新（Tools/Skills/Architecture/
   User Guide 入口）+ 本 release notes。
 - 无 API / 行为破坏：CLI 默认 `local_dev` 不变；显式传 config 的调用方行为不变。
+- 一个已知的窄例外（独立审查 nit #2，安全方向）：默认 Web 路径上若设了
+  `AGENT_PERMISSION_MODE`（`plan`/`auto`/`bypass`），此前会塑形引擎；现在 preset 检查在
+  mode 之前，`local_safe` 会**遮蔽**它。这是刻意且更安全的默认；要恢复 mode 行为，显式
+  传 config 设 `permission_preset`（覆盖默认）。
 
 ## 7. 升级与回滚
 
