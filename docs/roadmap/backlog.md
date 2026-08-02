@@ -90,7 +90,7 @@
 
 ## 收尾
 
-- [ ] P1-9 文档 + Phase 1 Release Candidate（路线图 §8 完成清单逐步勾选）
+- [x] P1-9 文档 + Phase 1 Release Candidate — ✅ PR #46（2026-08-02）。README 刷新 + 新增 `docs/user-guide/`5 篇（local-safe/web-workbench/workspace/evolution/troubleshooting）+ `docs/RELEASE-v0.1.0-rc1.md`（诚实威胁模型 + §8 完成清单 20 项逐项核对：✅13/⚠️5/本 RC 修复1/本文件1）。**并修复 Gap#1 安全 bug**：默认 Web workbench 此前 `create_app` 用 `from_env()`（preset=""→无权限引擎全放行），现 `_default_workbench_config()` 钉 `local_safe`。§8 20/20 已逐项核对；⚠️ 部分项已如实登记进 release notes §4。
 
 ## Phase 2（later，依赖 Phase 1 完成）
 
@@ -113,3 +113,4 @@
   - 审计小项：§3.6 evidence resolution（#17）/ overlay 域化（#18）/ rephrase 加固（#19）/ recovery transient retry（#22，重开 PR #37）/ P0-3 chart provenance（#23）
   - skill-ledger 2 minor 跟进（#38）；feedback CSRF（#40）；workspace add_run 跨进程锁 + evaluator metrics:None guard（#42）
   - 每个 PR 均过独立子 Agent 对抗审查收敛（0 blocking/major）+ quality_gate 绿
+- ✅ **Phase 1 收尾（PR #46，2026-08-02）**：P1-9 用户文档 + Phase 1 Release Candidate + local_safe 接线修复（Gap#1）。文档：`docs/user-guide/`5 篇 + README + `docs/RELEASE-v0.1.0-rc1.md`。RC 判定：本地工作台维度已具备 RC 条件；唯一未闭环主目标 = Wave 3 G1 真实晋升（见上，阻塞于 API key）。
