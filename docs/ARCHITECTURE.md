@@ -131,6 +131,7 @@ src/data_analysis_agent/server/event_codec.py = "AgentEvent → 稳定 SSE JSON 
 src/data_analysis_agent/server/app.py = "FastAPI workbench:/api/run/stream(SSE 跑 runtime 推事件)+ /api/upload + /api/approval + 静态首页;localhost-only,复用 AgentRuntime.from_config"
 src/data_analysis_agent/server/approval.py = "Web 审批通道(P1-3.7):AWAITING_CONFIRMATION 时挂起 SSE、等浏览器 /api/approval 裁决,超时=deny(fail-closed);threading.Event 跨线程/循环安全"
 src/data_analysis_agent/server/__main__.py = "uvicorn 启动入口(python -m data_analysis_agent.server,强制绑 127.0.0.1)"
+src/data_analysis_agent/server/bind.py = "localhost-only 绑定策略(P1-3.2):is_loopback/resolve_bind_host/unsafe_warning;server 与 web 两入口共享,非 loopback 无 --unsafe 即 fail-closed 拒启"
 ```
 
 <!-- manifest:end -->
