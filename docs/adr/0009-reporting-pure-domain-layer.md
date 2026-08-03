@@ -4,7 +4,7 @@
 
 ## 背景
 
-报告交付审计(`docs/roadmap/2026-07-06-analysis-report-quality-audit.md`)给出 2.3/5:渲染器(`html_report`)强,报告智能层(契约/口径/图表语义/QA/eval)弱。设计基线(`docs/superpowers/specs/2026-07-06-report-delivery-optimization-design.md` §5.1)要求新建 `reporting` 包承载 UserNeed / DataContext / ProcessContext / ReportContract / MetricSpec / EvidenceRef / ChartSpec / ReportDocument / QA 等领域模型,且"may depend on stdlib and low-level shared utilities only ... must not depend on agent_loop, protocol, runtime, or evolution"。这是项目第一次引入一个横跨未来多个 Wave 的纯领域层,需要钉死其依赖边界,避免被运行时反向耦合(项目已有 telemetry/memory/evolution 经回调反向解耦的先例,见 `scripts/drift_rules.py`)。
+报告交付审计(`docs/roadmap/2026-07-06-analysis-report-quality-audit.md`)给出 2.3/5:渲染器(`html_report`)强,报告智能层(契约/口径/图表语义/QA/eval)弱。设计基线要求新建 `reporting` 包承载 UserNeed / DataContext / ProcessContext / ReportContract / MetricSpec / EvidenceRef / ChartSpec / ReportDocument / QA 等领域模型,且"may depend on stdlib and low-level shared utilities only ... must not depend on agent_loop, protocol, runtime, or evolution"。这是项目第一次引入一个横跨未来多个 Wave 的纯领域层,需要钉死其依赖边界,避免被运行时反向耦合(项目已有 telemetry/memory/evolution 经回调反向解耦的先例,见 `scripts/drift_rules.py`)。
 
 ## 决策
 

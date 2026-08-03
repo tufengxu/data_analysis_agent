@@ -262,4 +262,4 @@ mypy src
 ## Architecture Reference
 
 See `docs/ARCHITECTURE.md` for the module map (machine-checked manifest), subsystem
-invariants, and dependency rules. Design specs live under `docs/superpowers/specs/`.
+invariants, and dependency rules. Durable architecture decisions live under `docs/adr/`.

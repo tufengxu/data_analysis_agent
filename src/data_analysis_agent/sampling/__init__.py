@@ -6,7 +6,6 @@ Two seams share one structured model and one renderer:
     * universal fallback — :mod:`text_summary` runs in the harness on any
       oversized string (pure stdlib, sample-estimated stats).
 
-See ``docs/superpowers/specs/2026-06-06-data-sampling-compaction-design.md``.
 """
 
 from __future__ import annotations
