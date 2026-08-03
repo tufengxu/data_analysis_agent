@@ -8,9 +8,6 @@
 >
 > Related roadmap: `docs/roadmap/2026-07-05-phase1-phase2-execution-plan.md`
 >
-> Optimization design:
-> `docs/superpowers/specs/2026-07-06-report-delivery-optimization-design.md`
-
 ## 0. Executive Judgment
 
 Current DataAnalysisAgent can produce a technically valid HTML report artifact,

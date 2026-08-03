@@ -35,6 +35,39 @@ mypy src
 python -m data_analysis_agent      # CLI 入口;亦可用 console script `data-agent`
 ```
 
+## CodeGraph 辅助检索
+
+本项目已在 `.codegraph/` 建立本机索引。Claude Code、Codex、Pi、Kimi 等具备
+Shell 执行能力的 Agent 使用相同的 CLI 步骤；从 IDE 或受限环境启动时，为避免
+`PATH` 差异，统一使用受控入口 `/Users/fengxutu/.local/bin/codegraph`。
+
+```bash
+cd "/Users/fengxutu/FENGXU TU/Projects/DataAnalysisAgent"
+/Users/fengxutu/.local/bin/codegraph status .
+# 仅在索引陈旧、任务确需最新图谱且允许刷新派生索引时执行
+/Users/fengxutu/.local/bin/codegraph sync .
+/Users/fengxutu/.local/bin/codegraph explore "<架构、调用链或影响范围问题>"
+/Users/fengxutu/.local/bin/codegraph node "<符号名>"
+/Users/fengxutu/.local/bin/codegraph callers "<符号名>"
+/Users/fengxutu/.local/bin/codegraph callees "<符号名>"
+/Users/fengxutu/.local/bin/codegraph impact "<符号名>"
+```
+
+- 在架构梳理、跨文件调用链、符号定位和改动影响分析中，可先用 CodeGraph 快速缩小范围；
+  简单的已知路径读取或精确文本搜索可直接使用原生文件读取与 `rg`。
+- 开始结构性调查前先执行 `codegraph status .`。若索引陈旧，或其他 Agent/工作树刚修改过代码，
+  且当前任务允许刷新本机派生索引，再执行 `codegraph sync .`。Git 的 commit、merge/pull、
+  checkout 后另有项目本地 Hook 自动同步，但它不覆盖尚未触发这些 Git 事件的工作区修改。
+- CodeGraph 是派生索引，结果可能因索引时点、静态解析、动态调用、反射或启发式解析而不完整；
+  所有输出只作为辅助证据，不视为当前源码的权威替代。
+- 涉及修改、缺陷根因、安全、权限、持久化、并发、数据损坏风险或其他高影响判断时，必须回到
+  当前源码、配置、测试、类型/静态检查和必要的运行结果进行验证；CodeGraph 与源码冲突时以
+  当前可复现证据为准。
+- 不因 CodeGraph 返回了源码片段就禁止或省略必要的 `Read`、`rg`、测试和运行验证；也不为简单
+  问题机械增加图谱调用。
+- 未经用户明确要求，不运行 `codegraph init`、`index`、`uninit`、`install` 或真实升级；版本检查
+  仅使用 `codegraph upgrade --check`。
+
 ## 已知约束 / 关键决策
 
 - 工具系统默认 **fail-closed**(见 `tools/base.py`);`python_exec` 默认走**持久内核**
@@ -61,8 +94,7 @@ python -m data_analysis_agent      # CLI 入口;亦可用 console script `data-a
 - **接线模式**:所有自进化子系统经回调/旁路接入,agent_loop **不反向依赖** telemetry/memory/evolution
   (drift 规则强制)。技能文件格式选 **JSON 非 YAML**(项目零 YAML、避免新依赖)。
 - **超大结果采样摘要**(`sampling/`):`python_exec` 沙箱对真实 DataFrame 出精确摘要;
-  `agent_loop` 接缝对任意超大字符串用纯 stdlib 兜底(替换盲截断)。设计见
-  `docs/superpowers/specs/2026-06-06-data-sampling-compaction-design.md`。沙箱子进程
+  `agent_loop` 接缝对任意超大字符串用纯 stdlib 兜底(替换盲截断)。沙箱子进程
   `PYTHONPATH=""` 故 `sandbox_summary.py` 以"读源码内联"注入,且 pandas 可选(缺失即退回原样)。
   内核侧 `kernel/kernel_main.py` 同约束(自包含、组合注入)。
 - **跑测试前需可编辑安装**:`uv pip install -e ".[data,dev,web]"`(沙箱会拦 uv 缓存,需放行;web 供质量门 mypy 检查 web/);

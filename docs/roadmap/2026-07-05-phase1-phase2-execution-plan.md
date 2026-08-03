@@ -50,7 +50,7 @@ Status labels:
 | --- | --- | --- | --- |
 | Report contract, context, QA, chart/report delivery | In progress | P1-4 / report waves | `report_need`, `report_context`, `report_contract`, reporting QA, templates, and chart/render work are already present or underway. |
 | Local Web Workbench | Planned next | P1-3 | Needs local safety/workspace foundation before full live-agent UX. |
-| Causal Decision MVP | Planned next | P1-10 | First-stage executable plan exists at docs/superpowers/plans/2026-07-07-causal-decision-stage1.md. |
+| Causal Decision MVP | Planned next | P1-10 | Stage 1 is scoped as an auditable causal decision domain slice. |
 | Causal inference platformization | Later | P2-12 | Depends on Phase 1 causal contracts, experiment readout, evals, and governance. |
 | Multi-user distributed platform | Later | P2-1..P2-11 | Must not weaken Phase 1 local safety contracts. |
 
@@ -184,9 +184,9 @@ verification path.
 Tasks:
 
 - P1-0.1 Create per-workstream implementation specs under
-  docs/superpowers/specs/YYYY-MM-DD-*.md before production code.
+  docs/specs/YYYY-MM-DD-*.md before production code.
 - P1-0.2 For each implementation wave, create an executable plan under
-  docs/superpowers/plans/YYYY-MM-DD-*.md.
+  docs/plans/YYYY-MM-DD-*.md.
 - P1-0.3 For architecture/security/persistence/concurrency/Web changes, run the
   independent code review loop after implementation.
 - P1-0.4 Keep `docs/ARCHITECTURE.md` manifest synchronized when source modules

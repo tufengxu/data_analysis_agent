@@ -17,5 +17,4 @@
 
 ## 影响
 
-新增 `sampling/` 模块;两个接缝(python_exec 沙箱、agent_loop 兜底)。详见
-`docs/superpowers/specs/2026-06-06-data-sampling-compaction-design.md`。
+新增 `sampling/` 模块;两个接缝(python_exec 沙箱、agent_loop 兜底)。

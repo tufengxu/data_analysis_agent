@@ -22,5 +22,4 @@ sampling 对大结果有损摘要后原文不可回取(采样不可逆风险);co
 ## 影响
 
 新增 `sampling/result_store.py`、`tools/retrieve_result.py`;agent_loop 接线(压缩即存 + 回取 marker);
-TTL + 总量 + 单条上限防存储膨胀。详见
-`docs/superpowers/specs/2026-06-08-ccr-lite-result-retrieval-design.md`。
+TTL + 总量 + 单条上限防存储膨胀。

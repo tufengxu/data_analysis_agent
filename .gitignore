@@ -18,3 +18,4 @@ __pycache__/
 
 # IDE
 .idea/
+.merge-wt/

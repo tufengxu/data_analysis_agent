@@ -18,5 +18,4 @@
 ## 影响
 
 新增 `scripts/`、`docs/ARCHITECTURE.md`、`docs/QUALITY_BAR.md`、`docs/DEVELOPMENT.md`、
-`.claude/settings.json` Stop hook。详见
-`docs/superpowers/specs/2026-06-07-project-standards-anti-entropy-design.md`。
+`.claude/settings.json` Stop hook。

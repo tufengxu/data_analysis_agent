@@ -116,6 +116,4 @@
 
 - `src/data_analysis_agent/server/app.py`、`server/event_codec.py`、`server/static/index.html`
 - `src/data_analysis_agent/web/app.py`、`web/schemas.py`、`web/static/index.html`
-- `docs/superpowers/specs/2026-07-21-web-workbench-run-design.md`（Wave 2 Slice 1 spec）
-- `docs/superpowers/plans/2026-07-07-report-delivery-wave8.md`（Wave 8 报告 workbench plan）
 - 路线图 P1-3：`docs/roadmap/2026-07-05-phase1-phase2-execution-plan.md` §P1-3

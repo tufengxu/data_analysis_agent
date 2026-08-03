@@ -41,7 +41,7 @@ evaluate`。未来可选:为 `quality_gate.py` 增设 eval 阶段,使行为回�
 锚定一个计算值就不是「钉死易腐的数」,而是「对一份永不改变的输入校验确定性结果」——这是
 红线的**意图合规**(intent-compliant)例外,不是放弃红线。
 
-落地(design: `docs/superpowers/specs/2026-07-15-eval-numeric-anchors-design.md`):
+落地:
 
 - `EvalRun.computed_outputs`:捕获本次运行中 `python_analysis` 工具结果文本(原始素材,
   本身不构成任何断言)。
