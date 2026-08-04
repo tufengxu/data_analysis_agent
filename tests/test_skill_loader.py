@@ -181,8 +181,8 @@ def test_pure_ascii_routing_unchanged_by_cjk_path():
 
 
 def test_save_skill_disk_cap_evicts_retired_protects_active(tmp_path):
-    """save_skill enforces the skills-dir cap: retired is evicted (rank 0) while
-    an active skill — even one with older mtime — is protected."""
+    """save_skill enforces the skills-dir cap: retired is evicted (rank 1, before
+    candidate) while an active skill — even one with older mtime — is protected."""
     import os
     import time
 
@@ -196,7 +196,7 @@ def test_save_skill_disk_cap_evicts_retired_protects_active(tmp_path):
     _touch(active, -1000)  # oldest on disk, but must survive (protected)
     save_skill(tmp_path, {"name": "retired", "instructions": "R" * 100_000, "status": "retired"})
     # New candidate with a cap forcing exactly the retired file out: total
-    # ~300KB, cap 250KB → evict one; retired (rank 0) beats candidate (rank 1).
+    # ~300KB, cap 250KB → evict one; retired (rank 1) beats candidate (rank 2).
     save_skill(
         tmp_path,
         {"name": "newcand", "instructions": "N" * 100_000, "status": "candidate"},
