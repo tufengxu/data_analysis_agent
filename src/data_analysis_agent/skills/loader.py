@@ -21,6 +21,7 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
+from ..disk_cap import enforce_dir_disk_cap
 from ..security.sanitizer import has_injection_marker
 from .base import Skill, SkillResult
 
@@ -135,12 +136,70 @@ def skill_to_dict(
     }
 
 
-def save_skill(skills_dir: str | Path, record: dict[str, Any]) -> Path | None:
+# Disk cap on the skills dir. Candidate skills accumulate as self-evolution runs
+# (synthesizer writes them, evaluator promotes a few); without a cap the dir grows
+# without bound. Active / proposed_promote skills are protected (live use /
+# awaiting human promotion review); retired is evicted first, then oldest
+# candidates — both by byte budget, never by sheer file count alone.
+_MAX_SKILL_DIR_BYTES = 128 * 1024 * 1024
+# Eviction rank: corrupt/unreadable (0) → retired (1) → candidate (2). A corrupt
+# file is pure dead weight, evicted before a valid retired skill.
+_SKILL_EVICT_STATUS_RANK = {"unknown": 0, "retired": 1, "candidate": 2}
+
+
+def _read_skill_status(path: Path) -> str:
+    """Best-effort status read for eviction ranking. Malformed → evictable."""
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return "unknown"
+    return str(record.get("status", "active")) if isinstance(record, dict) else "unknown"
+
+
+def _enforce_skill_disk_cap(skills_dir: Path, max_bytes: int) -> int:
+    """Best-effort cap on the skills dir via the shared helper.
+
+    Protected: ``active`` / ``proposed_promote``. Eviction rank: corrupt /
+    unreadable (0) → ``retired`` (1) → ``candidate`` (2), oldest mtime first
+    within each bucket. A skill missing ``status`` defaults to ``active``
+    (protected) — matches ``load_skills``.
+    """
+    statuses = {p: _read_skill_status(p) for p in skills_dir.glob("*.json")}
+
+    def is_protected(p: Path) -> bool:
+        return statuses.get(p) in ("active", "proposed_promote")
+
+    def rank(p: Path) -> tuple[int, float]:
+        bucket = _SKILL_EVICT_STATUS_RANK.get(statuses.get(p, ""), 2)
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        return (bucket, mtime)
+
+    return enforce_dir_disk_cap(
+        skills_dir,
+        max_bytes,
+        pattern="*.json",
+        is_protected=is_protected,
+        eviction_rank=rank,
+    )
+
+
+def save_skill(
+    skills_dir: str | Path,
+    record: dict[str, Any],
+    *,
+    max_dir_bytes: int = _MAX_SKILL_DIR_BYTES,
+) -> Path | None:
     """Persist one skill record to ``<dir>/<safe-name>.json``.
 
     Returns None (and refuses to write) if the instructions carry a structural
     prompt-injection marker — a synthesized skill must never need role spoofing /
     control tokens / override directives. Built-in records never trip this.
+
+    After the write, best-effort enforce the skills-dir disk cap (evict corrupt
+    → retired → oldest candidate; active / proposed_promote are protected).
     """
     instructions = record.get("instructions", "")
     if isinstance(instructions, str) and has_injection_marker(instructions):
@@ -154,6 +213,7 @@ def save_skill(skills_dir: str | Path, record: dict[str, Any]) -> Path | None:
     safe = _SAFE_NAME.sub("_", str(record.get("name", "skill"))).strip("._") or "skill"
     path = d / f"{safe}.json"
     path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    _enforce_skill_disk_cap(d, max_dir_bytes)
     return path
 
 

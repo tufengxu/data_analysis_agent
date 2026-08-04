@@ -298,3 +298,26 @@ def test_concurrent_stores_do_not_lose_entries(tmp_path):
     c = MemoryStore(d)
     keys = {e.key for e in c.all()}
     assert keys == {"lang", "theme"}
+
+
+def test_profile_store_evicts_lru_beyond_max_entries(tmp_path):
+    """ProfileStore trims to max_entries, dropping least-recently-used profiles."""
+    store = ProfileStore(tmp_path / "profiles", max_entries=2)
+
+    class _FakeProf:
+        def __init__(self, last_used_at):
+            self.last_used_at = last_used_at
+
+        def to_dict(self):
+            return {"last_used_at": self.last_used_at}
+
+    # Inject 3 profiles; cap is 2 → the oldest last_used_at is dropped.
+    store._index = {
+        "/old": _FakeProf("2026-01-01T00:00:00Z"),
+        "/mid": _FakeProf("2026-02-01T00:00:00Z"),
+        "/new": _FakeProf("2026-03-01T00:00:00Z"),
+    }
+    store._evict()
+    assert len(store._index) == 2
+    assert "/old" not in store._index  # least-recently-used evicted
+    assert "/new" in store._index
