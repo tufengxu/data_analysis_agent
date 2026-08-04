@@ -194,9 +194,7 @@ def test_save_skill_disk_cap_evicts_retired_protects_active(tmp_path):
         tmp_path, {"name": "active", "instructions": "A" * 100_000, "status": "active"}
     )
     _touch(active, -1000)  # oldest on disk, but must survive (protected)
-    save_skill(
-        tmp_path, {"name": "retired", "instructions": "R" * 100_000, "status": "retired"}
-    )
+    save_skill(tmp_path, {"name": "retired", "instructions": "R" * 100_000, "status": "retired"})
     # New candidate with a cap forcing exactly the retired file out: total
     # ~300KB, cap 250KB → evict one; retired (rank 0) beats candidate (rank 1).
     save_skill(
@@ -217,9 +215,7 @@ def test_save_skill_disk_cap_protects_proposed_promote(tmp_path):
         tmp_path,
         {"name": "promote", "instructions": "P" * 80_000, "status": "proposed_promote"},
     )
-    save_skill(
-        tmp_path, {"name": "ret", "instructions": "X" * 80_000, "status": "retired"}
-    )
+    save_skill(tmp_path, {"name": "ret", "instructions": "X" * 80_000, "status": "retired"})
     # total ~240KB, cap 200KB → evict one; retired out, promote + new kept.
     save_skill(
         tmp_path,
@@ -235,12 +231,8 @@ def test_save_skill_disk_cap_protects_proposed_promote(tmp_path):
 def test_corrupt_skill_file_evicted_before_retired_and_candidate(tmp_path):
     """A corrupt/unreadable skill file (rank 0) is evicted before retired and
     candidate — pure dead weight goes first."""
-    save_skill(
-        tmp_path, {"name": "active", "instructions": "x" * 100_000, "status": "active"}
-    )
-    save_skill(
-        tmp_path, {"name": "retired", "instructions": "x" * 100_000, "status": "retired"}
-    )
+    save_skill(tmp_path, {"name": "active", "instructions": "x" * 100_000, "status": "active"})
+    save_skill(tmp_path, {"name": "retired", "instructions": "x" * 100_000, "status": "retired"})
     # A large, malformed skill file (not written via save_skill).
     (tmp_path / "corrupt.json").write_text("x" * 100_000 + "{ not json", encoding="utf-8")
     # total ~400KB, cap 350KB → evict exactly one; corrupt (rank 0) beats retired (1).
