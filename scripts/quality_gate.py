@@ -7,6 +7,11 @@ Modes:
     (default)  run the full gate, human-readable output.
     --hook     Claude Code Stop-hook mode: skip when no src/tests/docs changes;
                on failure emit a block decision so the agent must fix before stop.
+               INVARIANT: --hook MUST always exit 0. The block is delivered as
+               JSON on stdout, never via the exit code. The Stop hook in
+               .claude/settings.json wraps this command in `[ -x ] && ... || true`,
+               so any non-zero exit (esp. 2, Claude Code's documented block code)
+               would be silently swallowed and the block lost.
 """
 
 from __future__ import annotations
