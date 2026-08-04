@@ -60,8 +60,10 @@ def enforce_dir_disk_cap(
         for p, sz, _mt in evictable:
             if total <= max_bytes:
                 break
-            with contextlib.suppress(OSError):
+            try:
                 p.unlink()
+            except OSError:
+                continue  # not removed — don't credit the count or total
             total -= sz
             evicted += 1
         return evicted

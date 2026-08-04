@@ -82,3 +82,20 @@ def test_non_matching_pattern_counts_zero(tmp_path: Path):
     evicted = enforce_dir_disk_cap(tmp_path, max_bytes=10, pattern="*.jsonl")
     assert evicted == 0
     assert (tmp_path / "a.txt").exists()
+
+
+def test_unlink_failure_not_counted(tmp_path: Path, monkeypatch):
+    """A failed unlink (read-only fs, permission) is not credited: evicted stays
+    0 and the file remains, so the caller is never told a file was removed when
+    it wasn't."""
+    _write(tmp_path / "a.jsonl", 1024)
+    _write(tmp_path / "b.jsonl", 1024)
+
+    def fail_unlink(self, *args, **kwargs):
+        raise OSError("read-only")
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+    evicted = enforce_dir_disk_cap(tmp_path, max_bytes=0, pattern="*.jsonl")
+    assert evicted == 0
+    assert (tmp_path / "a.jsonl").exists()  # unlink never succeeded
+    assert (tmp_path / "b.jsonl").exists()

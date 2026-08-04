@@ -230,3 +230,27 @@ def test_save_skill_disk_cap_protects_proposed_promote(tmp_path):
     assert "promote" in names  # proposed_promote protected
     assert "ret" not in names  # retired evicted to fit cap
     assert "new" in names
+
+
+def test_corrupt_skill_file_evicted_before_retired_and_candidate(tmp_path):
+    """A corrupt/unreadable skill file (rank 0) is evicted before retired and
+    candidate — pure dead weight goes first."""
+    save_skill(
+        tmp_path, {"name": "active", "instructions": "x" * 100_000, "status": "active"}
+    )
+    save_skill(
+        tmp_path, {"name": "retired", "instructions": "x" * 100_000, "status": "retired"}
+    )
+    # A large, malformed skill file (not written via save_skill).
+    (tmp_path / "corrupt.json").write_text("x" * 100_000 + "{ not json", encoding="utf-8")
+    # total ~400KB, cap 350KB → evict exactly one; corrupt (rank 0) beats retired (1).
+    save_skill(
+        tmp_path,
+        {"name": "cand", "instructions": "x" * 100_000, "status": "candidate"},
+        max_dir_bytes=350_000,
+    )
+    names = {p.stem for p in tmp_path.glob("*.json")}
+    assert "active" in names
+    assert "corrupt" not in names  # rank 0 → evicted first
+    assert "retired" in names  # rank 1 → survived over corrupt
+    assert "cand" in names

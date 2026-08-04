@@ -142,7 +142,9 @@ def skill_to_dict(
 # awaiting human promotion review); retired is evicted first, then oldest
 # candidates — both by byte budget, never by sheer file count alone.
 _MAX_SKILL_DIR_BYTES = 128 * 1024 * 1024
-_SKILL_EVICT_STATUS_RANK = {"retired": 0, "candidate": 1}
+# Eviction rank: corrupt/unreadable (0) → retired (1) → candidate (2). A corrupt
+# file is pure dead weight, evicted before a valid retired skill.
+_SKILL_EVICT_STATUS_RANK = {"unknown": 0, "retired": 1, "candidate": 2}
 
 
 def _read_skill_status(path: Path) -> str:
@@ -157,8 +159,10 @@ def _read_skill_status(path: Path) -> str:
 def _enforce_skill_disk_cap(skills_dir: Path, max_bytes: int) -> int:
     """Best-effort cap on the skills dir via the shared helper.
 
-    Protected: ``active`` / ``proposed_promote``. Eviction rank: ``retired`` (0)
-    before ``candidate`` (1), oldest mtime first within each bucket.
+    Protected: ``active`` / ``proposed_promote``. Eviction rank: corrupt /
+    unreadable (0) → ``retired`` (1) → ``candidate`` (2), oldest mtime first
+    within each bucket. A skill missing ``status`` defaults to ``active``
+    (protected) — matches ``load_skills``.
     """
     statuses = {p: _read_skill_status(p) for p in skills_dir.glob("*.json")}
 
@@ -194,8 +198,8 @@ def save_skill(
     prompt-injection marker — a synthesized skill must never need role spoofing /
     control tokens / override directives. Built-in records never trip this.
 
-    After the write, best-effort enforce the skills-dir disk cap (evict retired
-    → oldest candidate; active / proposed_promote are protected).
+    After the write, best-effort enforce the skills-dir disk cap (evict corrupt
+    → retired → oldest candidate; active / proposed_promote are protected).
     """
     instructions = record.get("instructions", "")
     if isinstance(instructions, str) and has_injection_marker(instructions):

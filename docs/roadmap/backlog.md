@@ -34,7 +34,7 @@
 
 ### 审计延后项（随 Wave 1 闭合）
 
-- [x] ~/.daa 全目录磁盘上限 + retention（trajectories 已有 cap `7e12fb5`，扩到 memory/profiles/skills）— ✅ 本 PR：提取 `enforce_dir_disk_cap` 共享 helper(trajectory 改用它,行为不变);skills 接入 128MB byte cap(retired→candidate evict,active/proposed_promote 保护);profiler 加 max_entries(LRU 500,镜像 MemoryStore);memory 已有 max_entries 不动。单文件 rewrite store(memory/profiles)用条目 cap 而非 byte-evict
+- [x] ~/.daa 全目录磁盘上限 + retention（trajectories 已有 cap `7e12fb5`，扩到 memory/profiles/skills）— ✅ PR #50：提取 `enforce_dir_disk_cap` 共享 helper(trajectory 改用它,语义微调:protected 文件计入 total 反映真实磁盘用量,旧版排除当前 session 文件);skills 接入 128MB byte cap(corrupt→retired→candidate evict,active/proposed_promote 保护);profiler 加 max_entries(LRU 500,镜像 MemoryStore);memory 已有 max_entries 不动。单文件 rewrite store(memory/profiles)用条目 cap 而非 byte-evict
 - [ ] 轨迹 PII 脱敏（`user_input` 全文 + `final_text_digest` 原样落盘）— **部分**：sensitive-mode 是「不捕获」非「净化」；主动 scrubbing 未做
 - [ ] ⏸ 默认 fail-closed（P3-1）— 不推荐：python_analysis 是主工具，CLI 单用户每次 ASK 不可用
 
