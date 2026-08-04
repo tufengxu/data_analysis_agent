@@ -9,12 +9,12 @@
 
 ## 推进主线（顺序执行，依赖链：Wave 1 → 2 → 3）
 
-| Wave | 工作                                         | 状态                                                                                                                                                                                                   |
-| ---- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0    | 清理陈旧分支 + 本 backlog                    | ✅ 2026-07-20                                                                                                                                                                                          |
-| 1    | P1-2 工作区 + P1-1 安全基线 + 审计安全延后项 | ✅ PR #8/#9/#10（工作区/安全基线/doctor）                                                                                                                                                              |
+| Wave | 工作                                         | 状态                                                                                                                                                                                                                                                         |
+| ---- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | 清理陈旧分支 + 本 backlog                    | ✅ 2026-07-20                                                                                                                                                                                                                                                |
+| 1    | P1-2 工作区 + P1-1 安全基线 + 审计安全延后项 | ✅ PR #8/#9/#10（工作区/安全基线/doctor）                                                                                                                                                                                                                    |
 | 2    | P1-3 Web Workbench                           | ✅ 全闭合（2026-08-01）：Slice 1 live-agent SSE run（PR #11）+ **前端 UI 全套**（PR #32：审批/upload/project/报告表单+QA/反馈/artifact 预览/统一 workbench/暗色响应式 + 安全加固；闭合 #24–#31）+ unsafe-bind 公开旗标（PR #44，server/bind.py fail-closed） |
-| 3    | G1 自进化真闭环（一次真实晋升）              | ❌ 未开始（下一步）                                                                                                                                                                                    |
+| 3    | G1 自进化真闭环（一次真实晋升）              | ❌ 未开始（下一步）                                                                                                                                                                                                                                          |
 
 ## Wave 1 范围明细
 
@@ -34,7 +34,7 @@
 
 ### 审计延后项（随 Wave 1 闭合）
 
-- [ ] ~/.daa 全目录磁盘上限 + retention（trajectories 已有 cap `7e12fb5`，扩到 memory/profiles/skills）— **部分**：trajectory cap 已有；memory/profiles/skills 扩面未做
+- [x] ~/.daa 全目录磁盘上限 + retention（trajectories 已有 cap `7e12fb5`，扩到 memory/profiles/skills）— ✅ 本 PR：提取 `enforce_dir_disk_cap` 共享 helper(trajectory 改用它,行为不变);skills 接入 128MB byte cap(retired→candidate evict,active/proposed_promote 保护);profiler 加 max_entries(LRU 500,镜像 MemoryStore);memory 已有 max_entries 不动。单文件 rewrite store(memory/profiles)用条目 cap 而非 byte-evict
 - [ ] 轨迹 PII 脱敏（`user_input` 全文 + `final_text_digest` 原样落盘）— **部分**：sensitive-mode 是「不捕获」非「净化」；主动 scrubbing 未做
 - [ ] ⏸ 默认 fail-closed（P3-1）— 不推荐：python_analysis 是主工具，CLI 单用户每次 ASK 不可用
 

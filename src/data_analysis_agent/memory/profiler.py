@@ -123,11 +123,15 @@ def assess(profile: DatasetProfile, path: str | Path) -> Staleness:
     return "fresh"
 
 
+_DEFAULT_MAX_PROFILES = 500
+
+
 class ProfileStore:
     """Disk-backed dataset_profile store keyed by resolved file path."""
 
-    def __init__(self, store_dir: str | Path) -> None:
+    def __init__(self, store_dir: str | Path, *, max_entries: int = _DEFAULT_MAX_PROFILES) -> None:
         self.dir = Path(store_dir)
+        self.max_entries = max_entries
         self._store = JsonlStore(self.dir / "profiles.jsonl")
         self._lock_path = self.dir / "profiles.jsonl.lock"
         self._index: dict[str, DatasetProfile] = {}
@@ -213,7 +217,19 @@ class ProfileStore:
     def all(self) -> list[DatasetProfile]:
         return list(self._index.values())
 
+    def _evict(self) -> None:
+        """Trim to max_entries, dropping least-recently-used profiles."""
+        if len(self._index) <= self.max_entries:
+            return
+        ordered = sorted(self._index.items(), key=lambda kv: kv[1].last_used_at)
+        for k, _ in ordered[: len(self._index) - self.max_entries]:
+            self._index.pop(k, None)
+
     def _rewrite(self) -> None:
+        # Evict over-cap entries before every persist (record() fans out into
+        # several rewrite paths; centralizing here can't miss one). Mirrors
+        # MemoryStore._evict.
+        self._evict()
         self._store.rewrite(prof.to_dict() for prof in self._index.values())
 
 

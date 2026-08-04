@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from ..context.compression import estimate_tokens
+from ..disk_cap import enforce_dir_disk_cap
 from ..events import (
     AgentEvent,
     CompleteEvent,
@@ -294,33 +295,16 @@ class TrajectoryLogger:
 
     def _enforce_disk_cap(self) -> None:
         """Best-effort: if the trajectories dir exceeds the cap, evict the oldest
-        OTHER session files (never the current session's own file). Best-effort —
-        telemetry must never break the live loop on a filesystem error.
+        OTHER session files (never the current session's own file). Delegated to
+        the shared ``enforce_dir_disk_cap`` helper; best-effort — telemetry must
+        never break the live loop on a filesystem error.
         """
-        import contextlib
-
-        cap = self._max_dir_bytes
-        try:
-            files = [p for p in self.dir.glob("*.jsonl") if p != self._store.path]
-            sized = []
-            total = 0
-            for p in files:
-                with contextlib.suppress(OSError):
-                    sz = p.stat().st_size
-                    sized.append((p, sz))
-                    total += sz
-            if total <= cap:
-                return
-            # Evict oldest-by-mtime until under cap.
-            sized.sort(key=lambda ps: ps[0].stat().st_mtime if ps[0].exists() else 0)
-            for p, sz in sized:
-                if total <= cap:
-                    break
-                with contextlib.suppress(OSError):
-                    p.unlink()
-                total -= sz
-        except OSError:
-            return
+        enforce_dir_disk_cap(
+            self.dir,
+            self._max_dir_bytes,
+            pattern="*.jsonl",
+            is_protected=lambda p: p == self._store.path,
+        )
 
 
 def load_turns(path: str | Path) -> list[dict[str, object]]:

@@ -178,3 +178,55 @@ def test_pure_ascii_routing_unchanged_by_cjk_path():
     reg.register(TrendAnalysisSkill())
     assert reg.match_best("descriptive distribution summary").name == "descriptive_analysis"
     assert reg.match_best("zzz totally unrelated") is None
+
+
+def test_save_skill_disk_cap_evicts_retired_protects_active(tmp_path):
+    """save_skill enforces the skills-dir cap: retired is evicted (rank 0) while
+    an active skill — even one with older mtime — is protected."""
+    import os
+    import time
+
+    def _touch(path, offset):
+        st = path.stat()
+        os.utime(path, (st.st_atime, time.time() + offset))
+
+    active = save_skill(
+        tmp_path, {"name": "active", "instructions": "A" * 100_000, "status": "active"}
+    )
+    _touch(active, -1000)  # oldest on disk, but must survive (protected)
+    save_skill(
+        tmp_path, {"name": "retired", "instructions": "R" * 100_000, "status": "retired"}
+    )
+    # New candidate with a cap forcing exactly the retired file out: total
+    # ~300KB, cap 250KB → evict one; retired (rank 0) beats candidate (rank 1).
+    save_skill(
+        tmp_path,
+        {"name": "newcand", "instructions": "N" * 100_000, "status": "candidate"},
+        max_dir_bytes=250_000,
+    )
+    names = {p.stem for p in tmp_path.glob("*.json")}
+    assert "active" in names  # protected regardless of mtime
+    assert "retired" not in names  # evicted — rank 0
+    assert "newcand" in names  # just-written, newest candidate survives
+
+
+def test_save_skill_disk_cap_protects_proposed_promote(tmp_path):
+    """proposed_promote skills (passed eval, awaiting human review) are protected
+    from eviction, same as active."""
+    save_skill(
+        tmp_path,
+        {"name": "promote", "instructions": "P" * 80_000, "status": "proposed_promote"},
+    )
+    save_skill(
+        tmp_path, {"name": "ret", "instructions": "X" * 80_000, "status": "retired"}
+    )
+    # total ~240KB, cap 200KB → evict one; retired out, promote + new kept.
+    save_skill(
+        tmp_path,
+        {"name": "new", "instructions": "Y" * 80_000, "status": "candidate"},
+        max_dir_bytes=200_000,
+    )
+    names = {p.stem for p in tmp_path.glob("*.json")}
+    assert "promote" in names  # proposed_promote protected
+    assert "ret" not in names  # retired evicted to fit cap
+    assert "new" in names
