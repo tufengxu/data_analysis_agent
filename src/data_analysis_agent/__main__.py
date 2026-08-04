@@ -387,17 +387,21 @@ async def run_single(
     except Exception as exc:
         # Crashed before run_turn returned — record an error manifest so the
         # failed run is still visible in project history, then re-raise so the
-        # CLI surfaces the error.
+        # CLI surfaces the error. Never let a manifest-write failure mask the
+        # original crash — crash visibility is the whole point of this branch.
         logger.exception("run_turn crashed; recording error manifest")
-        _record_run(
-            runtime,
-            query,
-            analysis_paths,
-            _error_stats(),
-            started_at,
-            _now_iso(),
-            warnings=[f"crashed: {type(exc).__name__}: {exc}"],
-        )
+        try:
+            _record_run(
+                runtime,
+                query,
+                analysis_paths,
+                _error_stats(),
+                started_at,
+                _now_iso(),
+                warnings=[f"crashed: {type(exc).__name__}: {exc}"],
+            )
+        except Exception:
+            logger.exception("failed to record error manifest; original crash raised")
         raise
     finally:
         await runtime.shutdown()
