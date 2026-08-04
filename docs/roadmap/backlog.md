@@ -40,7 +40,7 @@
 
 ## Wave 1 Slice 1 已知跟进项（独立审查 minor，不阻塞）
 
-- [ ] 崩溃 run 也落 RunManifest（terminal_reason="error"）：当前 run_turn 抛异常则不记录任何清单
+- [x] 崩溃 run 也落 RunManifest（terminal_reason="error"）— ✅ 本 PR：run_single/run_interactive catch run_turn 异常,记 terminal_reason="error" 的 manifest(warnings 含崩溃 detail)后 re-raise/break;之前崩溃 run 在历史无痕
 - [ ] 时间戳后缀统一（workspace 用 `+00:00`，session 用 `Z`）：纯 cosmetic
 - [x] project add_run 的 runs 索引并发安全 — ✅ PR #42（跨进程 flock + 锁内重读 manifest，防 stale-memory 竞态；evaluator apply() metrics:None guard 一并修）
 - [ ] interactive 模式一次调用共享一个 run_id（一 manifest/调用，非一 manifest/turn）：Slice 1 设计取舍

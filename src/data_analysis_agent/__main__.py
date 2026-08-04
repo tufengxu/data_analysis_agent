@@ -194,6 +194,22 @@ def _merge_run_stats(agg: dict[str, Any], stats: dict[str, Any]) -> None:
     agg["token_usage"]["output_tokens"] += stats["token_usage"]["output_tokens"]
 
 
+def _error_stats() -> dict[str, Any]:
+    """Stats shape for a run that crashed before ``run_turn`` could return.
+
+    ``terminal_reason="error"`` so the failed run still appears in project
+    history — the normal manifest path is skipped when run_turn raises, so
+    without this the crash would leave no trace in the run ledger.
+    """
+    return {
+        "event_counts": {},
+        "tool_calls": {},
+        "artifacts": [],
+        "terminal_reason": "error",
+        "token_usage": {"input_tokens": 0, "output_tokens": 0},
+    }
+
+
 def _record_run(
     runtime: AgentRuntime,
     request: str,
@@ -201,6 +217,8 @@ def _record_run(
     stats: dict[str, Any],
     started_at: str,
     finished_at: str,
+    *,
+    warnings: list[str] | None = None,
 ) -> Path | None:
     """Persist a RunManifest when the run is inside a project; else no-op."""
     if runtime.project is None or runtime.run_id is None:
@@ -222,7 +240,7 @@ def _record_run(
         artifacts=stats["artifacts"],
         terminal_reason=stats["terminal_reason"],
         token_usage=token_usage,
-        warnings=[],
+        warnings=warnings or [],
     )
     return runtime.project.add_run(run)
 
@@ -364,13 +382,26 @@ async def run_single(
         project=project,
     )
     started_at = _now_iso()
-    stats: dict[str, Any] | None = None
     try:
         stats = await run_turn(runtime, query, _shutdown_manager, approval)
+    except Exception as exc:
+        # Crashed before run_turn returned — record an error manifest so the
+        # failed run is still visible in project history, then re-raise so the
+        # CLI surfaces the error.
+        logger.exception("run_turn crashed; recording error manifest")
+        _record_run(
+            runtime,
+            query,
+            analysis_paths,
+            _error_stats(),
+            started_at,
+            _now_iso(),
+            warnings=[f"crashed: {type(exc).__name__}: {exc}"],
+        )
+        raise
     finally:
         await runtime.shutdown()
-    if stats is not None:
-        _record_run(runtime, query, analysis_paths, stats, started_at, _now_iso())
+    _record_run(runtime, query, analysis_paths, stats, started_at, _now_iso())
 
 
 async def run_interactive(
@@ -406,6 +437,7 @@ async def run_interactive(
         "token_usage": {"input_tokens": 0, "output_tokens": 0},
     }
     turn_count = 0
+    crash_warnings: list[str] = []
     try:
         while not _shutdown_manager.is_shutdown_requested():
             try:
@@ -435,7 +467,18 @@ async def run_interactive(
                         f"[dim]{apply_memory_command(runtime.memory_injector, parsed)}[/dim]"
                     )
                 continue
-            stats = await run_turn(runtime, query, _shutdown_manager, approval)
+            try:
+                stats = await run_turn(runtime, query, _shutdown_manager, approval)
+            except Exception as exc:
+                # A turn crashed — mark the session manifest as error and stop
+                # (a crash mid-session usually means the kernel/model is wedged).
+                logger.exception("run_turn crashed in interactive session")
+                agg["terminal_reason"] = "error"
+                crash_warnings.append(
+                    f"crashed on turn {turn_count + 1}: {type(exc).__name__}: {exc}"
+                )
+                turn_count += 1  # count the crashed turn so a manifest is recorded
+                break
             _merge_run_stats(agg, stats)
             turn_count += 1
             console.print()
@@ -449,6 +492,7 @@ async def run_interactive(
             agg,
             started_at,
             _now_iso(),
+            warnings=crash_warnings or None,
         )
 
 
