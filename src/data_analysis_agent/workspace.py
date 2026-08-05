@@ -34,7 +34,7 @@ def _utcnow_iso(now: Callable[[], Any] | None = None) -> str:
 
     dt = now() if now is not None else datetime.now(timezone.utc)
     if hasattr(dt, "isoformat"):
-        return dt.isoformat()
+        return dt.isoformat().replace("+00:00", "Z")  # Z suffix, matching session/trajectory/memory
     return str(dt)
 
 
