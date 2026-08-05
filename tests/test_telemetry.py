@@ -128,6 +128,21 @@ def test_logger_estimates_tokens_when_usage_absent(tmp_path):
     assert int(record.tokens["output"]) > 0  # estimated from final text
 
 
+def test_logger_scrubs_pii_from_user_input_and_final_text(tmp_path):
+    """end_turn runs user_input / final_text_digest through scrub_pii before
+    persisting — the PII scrubber is wired into the capture path, not just unit-tested."""
+    logger = TrajectoryLogger(tmp_path, "sess_pii", monotonic=_FakeClock())
+    logger.begin_turn("联系 13812345678 或 alice@example.com")
+    logger(CompleteEvent(terminal_reason="COMPLETED", final_text="回复 13812345678 确认"))
+    record = logger.end_turn()
+
+    assert "[PHONE]" in record.user_input
+    assert "[EMAIL]" in record.user_input
+    assert "13812345678" not in record.user_input
+    assert "13812345678" not in record.final_text_digest
+    assert "[PHONE]" in record.final_text_digest
+
+
 def test_attach_feedback_merges_onto_turn(tmp_path):
     logger = TrajectoryLogger(tmp_path, "sess_d", monotonic=_FakeClock())
     _drive_one_turn(logger)

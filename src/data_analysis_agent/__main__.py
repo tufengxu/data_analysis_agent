@@ -31,6 +31,7 @@ from .events import (
 
 # Assembly lives in the composition root; re-exported here so existing callers
 # (and tests) importing them from __main__ keep working.
+from .pii import scrub_pii
 from .runtime import (  # noqa: F401
     AgentRuntime,
     build_message_store,
@@ -226,7 +227,7 @@ def _record_run(
     usage = stats["token_usage"]
     token_usage = usage if (usage["input_tokens"] or usage["output_tokens"]) else None
     # Sensitive run: never write the raw user query into the manifest.
-    request_text = "<redacted: sensitive-mode>" if runtime.sensitive_mode else request
+    request_text = "<redacted: sensitive-mode>" if runtime.sensitive_mode else scrub_pii(request)
     run = RunManifest(
         run_id=runtime.run_id,
         project_id=runtime.project.project_id,

@@ -31,6 +31,7 @@ harness 决定「做多少」。本文件是架构的单一事实源;下方 mani
 - `artifacts.py` ✗→ 任何 `data_analysis_agent.*`
 - `jsonl_store.py` ✗→ 任何 `data_analysis_agent.*`(纯 stdlib 叶子,被各 store 组合)
 - `disk_cap.py` ✗→ 任何 `data_analysis_agent.*`(纯 stdlib 叶子,被 telemetry/skills 组合,目录磁盘上限 helper)
+- `pii.py` ✗→ 任何 `data_analysis_agent.*`(纯 stdlib 叶子,被 telemetry/**main** 组合,PII scrubber)
 - `telemetry/*` ✗→ `agent_loop`/`tools`/`skills`/`protocol`/`security`(经 EventConsumer 反向解耦)
 - `memory/*` ✗→ `agent_loop`/`tools`/`skills`/`protocol`/`security`(经回调注入反向解耦;可依赖 `context`)
 - `security/tool_gate.py` ✗→ `agent_loop`/`runtime`/`session`(被 agent_loop 依赖的授权接缝,不得反向耦合)
@@ -61,6 +62,7 @@ src/data_analysis_agent/doctor.py = "doctor 健康检查:API key / data extras /
 src/data_analysis_agent/persistence.py = "append-only JSONL 消息存储 + session fork(组合 JsonlStore)"
 src/data_analysis_agent/jsonl_store.py = "JsonlStore primitive:原子重写 + 读容错 + 只读降级(纯 stdlib 叶子)"
 src/data_analysis_agent/disk_cap.py = "目录磁盘上限 helper:best-effort 按 byte cap 淘汰最旧/最低 rank 文件,protected 永不删(纯 stdlib 叶子;trajectory/skills 共用)"
+src/data_analysis_agent/pii.py = "PII scrubber:best-effort 正则 redact 邮箱/中国手机/身份证/IPv4(纯 stdlib 叶子;trajectory 落盘前 scrub user_input/final_text_digest/tool input_digest,__main__ scrub manifest request)"
 src/data_analysis_agent/workspace.py = "Project/ProjectManifest/RunManifest:本地项目工作区,把一次 run 的 session 态产物(artifact/kernel/results/messages)统一到同一根 + project/run 清单(原子写,opt-in;trajectories/memory/skills 仍走全局 ~/.daa,P1-2)"
 src/data_analysis_agent/context/compression.py = "5 级消息压缩流水线"
 src/data_analysis_agent/protocol/client.py = "Anthropic 流式/非流式客户端 + 重试 + 懒导入"

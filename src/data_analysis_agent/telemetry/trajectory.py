@@ -29,6 +29,7 @@ from ..events import (
     UsageEvent,
 )
 from ..jsonl_store import JsonlStore
+from ..pii import scrub_pii
 from .feedback import FeedbackRecord
 
 _DIGEST_CHARS = 2000
@@ -99,6 +100,7 @@ def _digest_tool_input(
         text = json.dumps(scrub(params), ensure_ascii=False)
     except (TypeError, ValueError):
         text = str(params)
+    text = scrub_pii(text)  # redact PII in tool params before persisting
     if len(text) > cap:
         return text[:cap] + "…(truncated)"
     return text
@@ -256,8 +258,10 @@ class TrajectoryLogger:
         # raw user prompt or model final text — only structural telemetry. The
         # in-memory values are still used above for token estimation (a count, not
         # the text itself).
-        user_input = self._user_input if self._enable_inputs else ""
-        final_text_digest = self._final_text[:_DIGEST_CHARS] if self._enable_inputs else ""
+        user_input = scrub_pii(self._user_input) if self._enable_inputs else ""
+        final_text_digest = (
+            scrub_pii(self._final_text[:_DIGEST_CHARS]) if self._enable_inputs else ""
+        )
         record = TurnRecord(
             session_id=self.session_id,
             turn_id=self._turn_id,
