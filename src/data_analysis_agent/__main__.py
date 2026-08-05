@@ -177,7 +177,7 @@ def _now_iso() -> str:
     """UTC ISO-8601 timestamp for run manifests."""
     from datetime import datetime, timezone
 
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _merge_run_stats(agg: dict[str, Any], stats: dict[str, Any]) -> None:

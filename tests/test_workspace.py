@@ -53,7 +53,7 @@ def test_init_creates_layout_and_manifest(home: Path) -> None:
 
     manifest = json.loads((proj.root / "project.json").read_text(encoding="utf-8"))
     assert manifest["project_id"] == "demo"
-    assert manifest["created_at"] == FIXED_NOW.isoformat()
+    assert manifest["created_at"] == FIXED_NOW.isoformat().replace("+00:00", "Z")
     assert manifest["authorized_paths"] == ["/data/sales.csv"]
     assert manifest["model"] == "claude-sonnet-5"
     assert manifest["preset"] == "local_safe"
@@ -67,7 +67,9 @@ def test_init_is_idempotent_does_not_clobber(home: Path) -> None:
     assert proj.manifest.runs == ["r1"]
 
     reinit = Project.init("demo", home=home, now=lambda: datetime(2030, 1, 1, tzinfo=timezone.utc))
-    assert reinit.manifest.created_at == FIXED_NOW.isoformat()  # not overwritten
+    assert reinit.manifest.created_at == FIXED_NOW.isoformat().replace(
+        "+00:00", "Z"
+    )  # not overwritten
     assert reinit.manifest.runs == ["r1"]  # index preserved
 
 
