@@ -59,6 +59,14 @@ IMPORT_RULES: list[dict[str, object]] = [
         "forbid": ["data_analysis_agent"],
     },
     {
+        "who": "data_analysis_agent.pii",
+        "forbid": ["data_analysis_agent"],
+    },
+    {
+        "who": "data_analysis_agent.disk_cap",
+        "forbid": ["data_analysis_agent"],
+    },
+    {
         "who": "data_analysis_agent.telemetry",
         "forbid": [
             "data_analysis_agent.agent_loop",
