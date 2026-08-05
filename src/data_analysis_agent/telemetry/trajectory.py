@@ -285,11 +285,16 @@ class TrajectoryLogger:
         """Append a feedback row referencing the most recently flushed turn.
 
         Explicit /good /bad arrives after the turn completed, so it is recorded
-        as a separate line keyed by turn_id rather than rewriting history.
+        as a separate line keyed by turn_id rather than rewriting history. The
+        free-text ``detail`` carries user PII and shares the trajectory file with
+        the (already-scrubbed) turn row, so scrub it the same way; under
+        sensitive-mode it is dropped entirely (capture-nothing, like the turn).
         """
         if self._last_turn_id is None:
             return False
-        line = {"type": "feedback", "turn_id": self._last_turn_id, **asdict(feedback)}
+        record = asdict(feedback)
+        record["detail"] = "" if not self._enable_inputs else scrub_pii(feedback.detail or "")
+        line = {"type": "feedback", "turn_id": self._last_turn_id, **record}
         return self._store.append(line)
 
     # --- persistence -----------------------------------------------------

@@ -12,6 +12,20 @@ nothing at all; this module is the middle ground for the default capture path.
 
 Pure stdlib leaf (like ``jsonl_store`` / ``disk_cap``) so telemetry — which drift
 rules keep decoupled from ``security/`` — can import it.
+
+Known limitations (deliberate scope — not covered):
+- Phone numbers with separators/spaces (138-1234-5678), international numbers.
+- IPv6 addresses.
+- Bank card numbers (16-19 digits) — distinct from the 18-digit ID card; ID
+  cards with internal spaces are also missed.
+- A phone glued into a longer digit run (no separator) is left alone, to avoid
+  partial redaction of long numbers.
+- IPv4 may false-positive on version strings (``1.2.3.4`` → ``[IP]``).
+
+Other PII sinks are NOT scrubbed here (separate backlog): the message store
+(``persistence.py`` — scrubbing would break resume fidelity) and the memory
+store (``store.py`` ``/define`` / ``/pref`` free text). Computed tool outputs
+(python stdout) are also unscrubbed.
 """
 
 from __future__ import annotations

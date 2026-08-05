@@ -143,6 +143,41 @@ def test_logger_scrubs_pii_from_user_input_and_final_text(tmp_path):
     assert "[PHONE]" in record.final_text_digest
 
 
+def _read_jsonl(path):
+    import json
+
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+
+
+def test_attach_feedback_scrubs_pii_detail(tmp_path):
+    """Feedback detail shares the trajectory file with the scrubbed turn row, so
+    it must be scrubbed too — not persisted verbatim (audit blocking finding)."""
+    logger = TrajectoryLogger(tmp_path, "sess_fb", monotonic=_FakeClock())
+    logger.begin_turn("q")
+    logger(CompleteEvent(terminal_reason="COMPLETED", final_text="ok"))
+    logger.end_turn()
+    logger.attach_feedback(FeedbackRecord(kind="bad", detail="13812345678 wrong"))
+
+    fb = next(r for r in _read_jsonl(logger.path) if r.get("type") == "feedback")
+    assert "13812345678" not in fb["detail"]
+    assert "[PHONE]" in fb["detail"]
+
+
+def test_attach_feedback_drops_detail_in_sensitive_mode(tmp_path):
+    """Sensitive-mode captures nothing — feedback detail must be empty there,
+    consistent with the turn's own (empty) inputs."""
+    logger = TrajectoryLogger(tmp_path, "sess_fb2", monotonic=_FakeClock(), enable_inputs=False)
+    logger.begin_turn("q")
+    logger(CompleteEvent(terminal_reason="COMPLETED", final_text="ok"))
+    logger.end_turn()
+    logger.attach_feedback(FeedbackRecord(kind="bad", detail="13812345678 secret"))
+
+    fb = next(r for r in _read_jsonl(logger.path) if r.get("type") == "feedback")
+    assert fb["detail"] == ""
+
+
 def test_attach_feedback_merges_onto_turn(tmp_path):
     logger = TrajectoryLogger(tmp_path, "sess_d", monotonic=_FakeClock())
     _drive_one_turn(logger)
