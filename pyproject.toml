@@ -41,10 +41,15 @@ web = [
     "fastapi>=0.110.0",
     "uvicorn>=0.27.0",
 ]
+serving = [
+    # v2 统一暴露层:MCP stdio server(官方 SDK);CLI 通道不依赖它
+    "mcp>=1.2.0",
+]
 
 [project.scripts]
 data-agent = "data_analysis_agent.__main__:main"
 data-agent-web = "data_analysis_agent.web.__main__:main"
+data-agent-capabilities = "data_analysis_agent.capabilities.serving.cli:main"
 
 [tool.ruff]
 line-length = 100

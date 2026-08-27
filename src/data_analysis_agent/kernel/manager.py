@@ -24,7 +24,9 @@ from typing import Any
 from ..sampling.config import SamplingConfig
 
 _PACKAGE_DIR = Path(__file__).resolve().parent.parent
-_SANDBOX_SUMMARY_PATH = _PACKAGE_DIR / "sampling" / "sandbox_summary.py"
+# v2: sandbox_summary physically migrated to capabilities/sampling/ (the v1
+# sampling path is now an import shim — unusable for source inlining).
+_SANDBOX_SUMMARY_PATH = _PACKAGE_DIR / "capabilities" / "sampling" / "sandbox_summary.py"
 _KERNEL_MAIN_PATH = Path(__file__).resolve().parent / "kernel_main.py"
 
 _spawn_subprocess = asyncio.create_subprocess_exec
