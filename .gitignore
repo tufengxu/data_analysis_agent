@@ -24,3 +24,6 @@ __pycache__/
 harnesses/*/node_modules/
 daa-capabilities-artifacts/
 harnesses/daa-capabilities-artifacts/
+
+# Mimosa 插件本地状态(任意层级)
+**/.mimosa/
