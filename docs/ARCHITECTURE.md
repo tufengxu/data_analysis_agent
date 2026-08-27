@@ -72,6 +72,7 @@ Agent 组装(preset:系统提示 + 工具注册 + 技能注入 + 事件接线)
   `tests/test_capability_serving.py` 守护;真实 stdio 分帧由
   `examples/v2/smoke_stdio_mcp.py` 验证。
 - 运行/验证手册:`docs/V2_RUNBOOK.md`;v1 全部行为与测试不回归(R2)。
+- 整体分层/传输/接缝的架构决策记录见 ADR 0011(`docs/adr/0011-capability-core-dual-harness.md`)。
 
 ## 模块 manifest
 

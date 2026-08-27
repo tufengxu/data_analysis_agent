@@ -115,6 +115,8 @@ data_analysis_agent/
 ```bash
 cd "/Users/fengxutu/FENGXU TU/Projects/DataAnalysisAgent"
 pip install -e ".[data,dev,web]"
+# v2 能力层/双基座开发再加 serving extra(mcp SDK):
+# uv pip install -e ".[data,dev,web,serving]"
 ```
 
 ### Configuration

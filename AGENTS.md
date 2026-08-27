@@ -16,11 +16,17 @@
 ## 目录约定
 
 ```
-src/data_analysis_agent/   核心源码(agent_loop / session / kernel / state_machine /
-                           events / protocol / tools / artifacts)
-tests/                     pytest(session / kernel / artifacts / compression / tools …)
+src/data_analysis_agent/   核心源码。v1 harness(agent_loop / session / state_machine /
+                           events / protocol / runtime)+ 能力侧(tools / kernel / causal /
+                           reporting / telemetry / memory / skills / evolution / artifacts);
+                           capabilities/ 为 v2 能力核心层(contracts + 五域 + serving,
+                           sampling 实现已物理迁入,v1 sampling/ 为 re-export shim)
+harnesses/                 v2 双基座适配层(shared MCP 客户端 / pi / deepseek,仅胶水)
+tests/                     pytest(session / kernel / artifacts / compression / tools /
+                           capability_* …)
 openspec/                  OpenSpec 规格与变更(specs / changes)
-docs/  examples/           文档与示例
+docs/  examples/           文档(ARCHITECTURE manifest / ADR / V2_RUNBOOK / QUALITY_BAR /
+                           DEVELOPMENT …)与示例(eval_tasks / v2 端到端演示)
 .claude/                   项目级 commands 与 skills
 ```
 
