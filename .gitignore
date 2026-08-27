@@ -19,3 +19,8 @@ __pycache__/
 # IDE
 .idea/
 .merge-wt/
+
+# v2 harnesses (TS adapters)
+harnesses/*/node_modules/
+daa-capabilities-artifacts/
+harnesses/daa-capabilities-artifacts/

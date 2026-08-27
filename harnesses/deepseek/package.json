@@ -1,0 +1,22 @@
+{
+  "name": "@daa-harness/deepseek",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DataAnalysisAgent capability adapter for the DeepSeek Harness (dsh, Cordis plugin runtime)",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.0",
+    "@types/node": "^24.0.0",
+    "@deepseek-ai/dsh": "0.1.1-rc.2"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "smoke": "node smoke/smoke.ts"
+  }
+}

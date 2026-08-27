@@ -1,0 +1,22 @@
+{
+  "name": "@daa-harness/pi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pi Agent Core adapter: proxy the 19 daa capability tools, compact oversized tool results, record daa.trajectory.v1 events.",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "smoke": "node smoke/smoke.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.3",
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.0"
+  }
+}

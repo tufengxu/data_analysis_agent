@@ -1,0 +1,14 @@
+{
+  "name": "@daa-harness/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared capability-server client for the Pi / dsh adapters (official MCP TS SDK)",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "typescript": "^7.0.2"
+  }
+}

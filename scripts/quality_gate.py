@@ -44,6 +44,7 @@ def _drift() -> tuple[bool, str]:
     problems: list[str] = []
     problems += checks.check_manifest(REPO / "docs/ARCHITECTURE.md", SRC, REPO)
     problems += checks.check_import_rules(SRC, REPO, drift_rules.IMPORT_RULES)
+    problems += checks.check_harness_adapters(REPO)
     for doc in drift_rules.DOC_FILES:
         text = (REPO / doc).read_text(encoding="utf-8")
         problems += checks.check_dead_links(text, REPO)
@@ -54,6 +55,16 @@ def _drift() -> tuple[bool, str]:
     if problems:
         msg_parts.append("errors:\n  " + "\n  ".join(problems))
     return (not problems), "\n".join(msg_parts).strip()
+
+
+def _ts() -> tuple[bool, str]:
+    # Polyglot gate step: type-check the TS adapters when their dependencies
+    # are installed; print an explicit SKIP notice otherwise (machines without
+    # Node). Never weakens the existing Python-side steps.
+    script = REPO / "harnesses" / "check-ts.sh"
+    if not script.exists():
+        return True, "SKIP: harnesses/check-ts.sh 不存在(尚无 TS 适配器)"
+    return _run(["bash", str(script)])
 
 
 def _eval() -> tuple[bool, str]:
@@ -76,6 +87,7 @@ def run_gate() -> tuple[bool, list[dict[str, object]]]:
         ("mypy", lambda: _run([str(BIN / "mypy"), "src"])),
         ("pytest", lambda: _run([str(BIN / "pytest"), "tests/", "-q"])),
         ("drift", _drift),
+        ("ts", _ts),
         ("eval", _eval),
     ]
     results: list[dict[str, object]] = []
@@ -130,12 +142,24 @@ def _write_step_summary(results: list[dict[str, object]], passed: bool, total: f
 
 
 def _changed() -> bool:
-    """True if src/tests/docs have tracked diffs or untracked files."""
-    diff = subprocess.run(["git", "diff", "--quiet", "--", "src", "tests", "docs"], cwd=REPO)
+    """True if src/tests/docs/harnesses have tracked diffs or untracked files."""
+    diff = subprocess.run(
+        ["git", "diff", "--quiet", "--", "src", "tests", "docs", "harnesses"], cwd=REPO
+    )
     if diff.returncode != 0:
         return True
     untracked = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard", "--", "src", "tests", "docs"],
+        [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "src",
+            "tests",
+            "docs",
+            "harnesses",
+        ],
         cwd=REPO,
         capture_output=True,
         text=True,

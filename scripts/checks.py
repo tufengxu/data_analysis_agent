@@ -196,3 +196,57 @@ def check_file_sizes(src_root: Path, repo_root: Path, limit: int) -> list[str]:
             rel = path.relative_to(repo_root).as_posix()
             warnings.append(f"file-size: {rel} = {loc} LOC > {limit} (god-file 风险)")
     return warnings
+
+
+# --- v2: harness adapter glue-only checks -------------------------------------
+#
+# Adapters (harnesses/*) must be protocol glue, never a second capability
+# implementation. Heuristics: (1) they may only reach the Python capability
+# layer through the `data-agent-capabilities` entrypoint (MCP/CLI), never via
+# python -m / inline imports; (2) per-file size caps.
+
+_ADAPTER_SOURCE_SUFFIXES = {".ts", ".tsx", ".js", ".mjs", ".cjs", ".sh"}
+_ADAPTER_IGNORE_DIRS = {"node_modules", "dist", "build", ".pi"}
+_ADAPTER_FILE_LOC_LIMIT = 500
+_SPAWN_CALL_RE = re.compile(
+    r"(?:spawn|spawnSync|execFile|execFileSync|exec|execSync|fork)\s*\(([^;]{0,240})",
+    re.DOTALL,
+)
+_PYTHON_ENTRY_RE = re.compile(r"python[0-9.]*\s+-[cm]\s+data_analysis_agent")
+
+
+def check_harness_adapters(repo_root: Path) -> list[str]:
+    harnesses = repo_root / "harnesses"
+    if not harnesses.is_dir():
+        return []
+    problems: list[str] = []
+    for path in sorted(harnesses.rglob("*")):
+        if not path.is_file() or path.suffix not in _ADAPTER_SOURCE_SUFFIXES:
+            continue
+        if any(part in _ADAPTER_IGNORE_DIRS for part in path.parts):
+            continue
+        if path.name == "check-ts.sh":  # gate tooling itself, not an adapter
+            continue
+        rel = path.relative_to(repo_root).as_posix()
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if len(text.splitlines()) > _ADAPTER_FILE_LOC_LIMIT:
+            problems.append(
+                f"adapter-glue: {rel} 超过 {_ADAPTER_FILE_LOC_LIMIT} 行 — "
+                "适配层应只有胶水,业务逻辑须下沉能力层"
+            )
+        if _PYTHON_ENTRY_RE.search(text):
+            problems.append(
+                f"adapter-entry: {rel} 直接调 python -m/-c data_analysis_agent — "
+                "只准经 data-agent-capabilities 入口"
+            )
+        if "from data_analysis_agent" in text or "import data_analysis_agent" in text:
+            problems.append(f"adapter-entry: {rel} 内联 Python 能力代码/导入 — 禁止第二实现")
+        for match in _SPAWN_CALL_RE.finditer(text):
+            snippet = match.group(1)
+            mentions_python = "python" in snippet.lower() or "data-agent" in snippet
+            if mentions_python and "data-agent-capabilities" not in snippet:
+                problems.append(
+                    f"adapter-entry: {rel} spawn 非 data-agent-capabilities 的 Python 入口: "
+                    f"{snippet.strip()[:80]!r}"
+                )
+    return problems

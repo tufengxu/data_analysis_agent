@@ -8,6 +8,31 @@ prefixes that such modules must not import.
 from __future__ import annotations
 
 IMPORT_RULES: list[dict[str, object]] = [
+    # v2 capability core: harness 无关。可委托 v1 能力侧包(tools/kernel/...),
+    # 但禁入一切 harness 内部(规范 3.1 五模块 + 装配/表现层)与三个物理迁移域的
+    # v1 re-export shim(防循环 import)。
+    {
+        "who": "data_analysis_agent.capabilities",
+        "forbid": [
+            "data_analysis_agent.agent_loop",
+            "data_analysis_agent.session",
+            "data_analysis_agent.state_machine",
+            "data_analysis_agent.protocol",
+            "data_analysis_agent.events",
+            "data_analysis_agent.runtime",
+            "data_analysis_agent.config",
+            "data_analysis_agent.persistence",
+            "data_analysis_agent.recovery",
+            "data_analysis_agent.security",
+            "data_analysis_agent.context",
+            "data_analysis_agent.server",
+            "data_analysis_agent.web",
+            "data_analysis_agent.__main__",
+            # sampling 物理迁移后其 v1 路径是 shim,能力层禁反向 import(防循环)。
+            # causal/reporting 采用委托式迁移:纯领域层本体即实现,能力层单向复用。
+            "data_analysis_agent.sampling",
+        ],
+    },
     {
         "who": "data_analysis_agent.sampling",
         "forbid": [
@@ -19,10 +44,25 @@ IMPORT_RULES: list[dict[str, object]] = [
             "data_analysis_agent.context",
         ],
     },
+    # v2 物理迁移后的 sampling 能力域:镜像 v1 sampling 规则(纯 stdlib + 可选 pandas,
+    # 禁耦合 tools/skills/security/context 等)。
     {
-        "who": "data_analysis_agent.sampling.sandbox_summary",
+        "who": "data_analysis_agent.capabilities.sampling",
+        "forbid": [
+            "data_analysis_agent.tools",
+            "data_analysis_agent.agent_loop",
+            "data_analysis_agent.protocol",
+            "data_analysis_agent.skills",
+            "data_analysis_agent.security",
+            "data_analysis_agent.context",
+            "data_analysis_agent.kernel",
+        ],
+    },
+    {
+        "who": "data_analysis_agent.capabilities.sampling.sandbox_summary",
         "forbid": ["data_analysis_agent"],
     },
+    # (v1 ``sampling/sandbox_summary.py`` 现为 shim,自包含约束由 capabilities 路径守护)
     {
         "who": "data_analysis_agent.tools",
         "forbid": ["data_analysis_agent.agent_loop"],
@@ -265,7 +305,13 @@ IMPORT_RULES: list[dict[str, object]] = [
 ]
 
 # Documents scanned for dead repo-path references.
-DOC_FILES: list[str] = ["README.md", "AGENTS.md", "docs/ARCHITECTURE.md"]
+DOC_FILES: list[str] = [
+    "README.md",
+    "AGENTS.md",
+    "docs/ARCHITECTURE.md",
+    "docs/V2_RUNBOOK.md",
+    "docs/THIRD_HARNESS_GUIDE.md",
+]
 
 # god-file warning threshold (lines of code). Phase 1: warn only.
 FILE_SIZE_LIMIT = 600
