@@ -42,11 +42,53 @@ harness 决定「做多少」。本文件是架构的单一事实源;下方 mani
 - `web/*` ✗→ 一切内部包(仅允许 `reporting`+ fastapi/starlette/pydantic;见 Wave 8 plan)
 - `causal/*` ✗→ 除 `reporting` 外的一切内部包(纯 stdlib 因果决策领域层,单向依赖 reporting 复用 Serializable;见 ADR 0010)
 
+## v2:能力核心层与双基座(2026-08)
+
+四层结构(依赖只准向下;`capabilities/*` 禁入下列所有 v1 harness/装配/表现层,
+由 drift 规则强制;第三基座接入只需新增 `harnesses/<name>/` 适配目录,能力层零改动,
+见 `docs/THIRD_HARNESS_GUIDE.md`):
+
+```
+能力核心层 capabilities/(contracts + tabular/reporting/causal/evolution/sampling)
+        ↓
+统一暴露层 capabilities/serving/(MCP stdio server,官方 mcp SDK + CLI data-agent-capabilities)
+        ↓
+基座适配层 harnesses/pi、harnesses/deepseek/(仅胶水:工具代理/结果压缩接缝/轨迹翻译;
+        spawn 白名单与规模上限由 checks.check_harness_adapters 强制)
+        ↓
+Agent 组装(preset:系统提示 + 工具注册 + 技能注入 + 事件接线)
+```
+
+- **迁移方式**:sampling 物理迁移(v1 `sampling/` 为纯 re-export shim,公共 API 不变);
+  causal/reporting 委托式迁移(契约在能力层,实现单向复用纯领域层);tabular 委托 v1
+  tools/kernel(KernelHolder 持久内核跨调用存活)。
+- **ToolResultCompactor**(`capabilities/sampling/compactor.py`):harness 无关压缩接缝,
+  v1 `agent_loop` 与两基座适配层共用同一实现;ResultStore 支持多进程共享
+  (mtime 检测重载,best-effort)。
+- **TrajectoryEvent**(`capabilities/evolution/`):`daa.trajectory.v1` 契约,记结构不记数值
+  (digest 字段强制 `^[0-9a-f]{12}:\d+$`);Pi/dsh 翻译器在适配层,经
+  `evolution_record_event` 写入,`load_v2_turns` 供离线 evolution 管线消费。
+- **传输一致性**:进程内直调 / MCP stdio / CLI 三传输等价输出由
+  `tests/test_capability_serving.py` 守护;真实 stdio 分帧由
+  `examples/v2/smoke_stdio_mcp.py` 验证。
+- 运行/验证手册:`docs/V2_RUNBOOK.md`;v1 全部行为与测试不回归(R2)。
+
 ## 模块 manifest
 
 <!-- manifest:start -->
 
 ```
+src/data_analysis_agent/capabilities/contracts.py = "v2 能力契约:CapabilitySpec/Registry/fail-closed 执行包络(Harness 无关,三传输同源)"
+src/data_analysis_agent/capabilities/causal/registry.py = "因果能力域注册:causal_analyze(分析)/causal_estimate(推断)/causal_report,委托纯领域层 causal/*(委托式迁移)"
+src/data_analysis_agent/capabilities/reporting/registry.py = "报告能力域注册:need/context/contract 纯函数 + chart/html 渲染(委托 tools.chart_render/html_report,产物目录限定)"
+src/data_analysis_agent/capabilities/tabular/registry.py = "表格能力域注册:7 能力委托 v1 tools;KernelHolder 持久内核跨调用存活"
+src/data_analysis_agent/capabilities/evolution/trajectory.py = "TrajectoryEvent 契约(daa.trajectory.v1):记结构不记数值,digest 字段拒绝原文"
+src/data_analysis_agent/capabilities/evolution/store.py = "TrajectoryWriter 轨迹 JSONL 写入(DAA_HOME/trajectories/v2)+ verify_file 校验"
+src/data_analysis_agent/capabilities/evolution/convert.py = "v2 轨迹 → v1 TurnRecord 转换器(离线 evolution 管线消费)"
+src/data_analysis_agent/capabilities/evolution/registry.py = "自进化能力域注册:evolution_record_event / evolution_verify_trajectory"
+src/data_analysis_agent/capabilities/serving/registry.py = "serving 全量装配:五域 register_all + sampling_compact_result/retrieve_result(DAA_CAPABILITIES_* 环境变量)"
+src/data_analysis_agent/capabilities/serving/mcp_server.py = "MCP stdio server(mcp SDK 2.x 低层 API):动态 schema 来自 CapabilitySpec,envelope JSON 文本返回"
+src/data_analysis_agent/capabilities/serving/cli.py = "data-agent-capabilities CLI(mcp/list/call/compact/retrieve;_run_coro 支持嵌入异步宿主)"
 src/data_analysis_agent/__main__.py = "CLI 入口:rich UI、交互模式(单事件循环)、审批交互(装配委托 runtime)"
 src/data_analysis_agent/runtime.py = "Composition root:AgentRuntime.from_config 统一装配,CLI 与 eval 同源(顶层 sink)"
 src/data_analysis_agent/agent_loop.py = "ReAct while-loop 引擎 + 9 步流水线 + 错误恢复 + 账本闭合"
@@ -102,12 +144,19 @@ src/data_analysis_agent/evolution/__main__.py = "进化离线 CLI:synthesize/min
 src/data_analysis_agent/security/permissions.py = "deny-first 权限引擎(4 层防御)"
 src/data_analysis_agent/security/tool_gate.py = "ToolGate:单次工具授权决策(decide 引擎策略 / validate 自检校验),agent_loop 的测试接缝"
 src/data_analysis_agent/security/sanitizer.py = "确定性 prompt-injection 净化叶(结构性载体剥离 + 注入标记检出 + 数值泄露检出 + 数据框包装;纯 stdlib,agent_loop/skills/runtime 注入 memory)"
-src/data_analysis_agent/sampling/config.py = "SamplingConfig + fidelity 档位预设"
-src/data_analysis_agent/sampling/model.py = "ColumnSummary / TableSummary 数据类"
-src/data_analysis_agent/sampling/render.py = "L3 Markdown 渲染器(共享,带采样警告)"
-src/data_analysis_agent/sampling/text_summary.py = "harness 纯 stdlib 兜底摘要器"
-src/data_analysis_agent/sampling/sandbox_summary.py = "精确 DataFrame 摘要,内联进 python_exec 沙箱"
-src/data_analysis_agent/sampling/result_store.py = "持久化结果存储(CCR-lite):原文落盘 + 按行回取 + TTL/容量回收"
+src/data_analysis_agent/capabilities/sampling/compactor.py = "ToolResultCompactor 接缝契约 + DefaultToolResultCompactor 参考实现(v1 compact_result 语义 + ResultStore 召回句柄)"
+src/data_analysis_agent/capabilities/sampling/config.py = "SamplingConfig + fidelity 档位预设(v2 物理迁移自 sampling/)"
+src/data_analysis_agent/capabilities/sampling/model.py = "ColumnSummary / TableSummary 数据类(v2 物理迁移)"
+src/data_analysis_agent/capabilities/sampling/render.py = "L3 Markdown 渲染器(共享,带采样警告;v2 物理迁移)"
+src/data_analysis_agent/capabilities/sampling/text_summary.py = "harness 纯 stdlib 兜底摘要器(v2 物理迁移)"
+src/data_analysis_agent/capabilities/sampling/sandbox_summary.py = "精确 DataFrame 摘要,内联进 python_exec 沙箱(自包含约束不变;v2 物理迁移)"
+src/data_analysis_agent/capabilities/sampling/result_store.py = "持久化结果存储(CCR-lite):原文落盘 + 按行回取 + TTL/容量回收(v2 物理迁移)"
+src/data_analysis_agent/sampling/config.py = "v1 shim → capabilities/sampling/config(物理迁移)"
+src/data_analysis_agent/sampling/model.py = "v1 shim → capabilities/sampling/model(物理迁移)"
+src/data_analysis_agent/sampling/render.py = "v1 shim → capabilities/sampling/render(物理迁移)"
+src/data_analysis_agent/sampling/text_summary.py = "v1 shim → capabilities/sampling/text_summary(物理迁移)"
+src/data_analysis_agent/sampling/sandbox_summary.py = "v1 shim → capabilities/sampling/sandbox_summary(物理迁移)"
+src/data_analysis_agent/sampling/result_store.py = "v1 shim → capabilities/sampling/result_store(物理迁移)"
 src/data_analysis_agent/telemetry/trajectory.py = "TurnRecord/TrajectoryLogger:实现 EventConsumer,按会话落 JSONL 轨迹(自进化原料)"
 src/data_analysis_agent/telemetry/feedback.py = "显式(/good /bad)与隐式(rephrase)反馈信号"
 src/data_analysis_agent/memory/model.py = "MemoryEntry(三类文本记忆)+ DatasetProfile(结构层/统计层/列指纹)"

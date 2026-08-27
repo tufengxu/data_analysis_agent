@@ -35,6 +35,26 @@ mypy src
 python -m data_analysis_agent      # CLI 入口;亦可用 console script `data-agent`
 ```
 
+### v2(能力核心层 + 双基座,2026-08)
+
+```bash
+uv pip install -e ".[data,dev,web,serving]"      # serving extra 提供 mcp SDK
+.venv/bin/data-agent-capabilities list            # v2 能力层 CLI(19 能力;子命令 mcp/call/compact/retrieve)
+.venv/bin/python examples/v2/demo_e2e.py         # 无 LLM 端到端演示(读表→图表→HTML→因果→压缩/召回→轨迹)
+(cd harnesses/pi && npm run smoke)               # Pi 适配器无 key 冒烟(deepseek 同理)
+bash harnesses/check-ts.sh                       # TS 适配器类型检查(质量门 ts 步同款)
+```
+
+- 布局:`src/data_analysis_agent/capabilities/`(契约 + tabular/reporting/causal/evolution/sampling
+  + serving)、`harnesses/{shared,pi,deepseek}/`。分层与依赖方向见 `docs/ARCHITECTURE.md` v2 章节。
+- v1 `sampling/` 是纯 re-export shim(实现物理迁移在 `capabilities/sampling/`);改采样逻辑
+  去能力层改,v1 公共 API 不变。
+- `capabilities/*` 禁 import v1 harness(agent_loop/session/state_machine/protocol/events/runtime/
+  config/...)与 `data_analysis_agent.sampling` shim(drift 强制);适配器只准经
+  `data-agent-capabilities` 入口调 Python(`checks.check_harness_adapters` 强制)。
+- 基座版本 pin:Pi `@earendil-works/pi-coding-agent@0.84.3`、dsh `@deepseek-ai/dsh@0.1.1-rc.2`
+  (核实日期 2026-08-26,记录于 openspec/changes/v2-capability-core/design.md)。
+
 ## CodeGraph 辅助检索
 
 本项目已在 `.codegraph/` 建立本机索引。Claude Code、Codex、Pi、Kimi 等具备

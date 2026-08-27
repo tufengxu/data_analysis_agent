@@ -1,0 +1,53 @@
+# dsh (DeepSeek Harness) 插件配置示例 —— DataAnalysisAgent 适配层
+#
+# 这是 dsh(Cordis 运行时)自身的配置格式;本仓库整体零 YAML,此处是
+# dsh 基座强制的 cordis.yml patch 格式,故作为唯一的示例配置存放于本目录。
+#
+# 用法(作为 profile 的 patch 覆盖层加载;相对路径以本文件所在目录为基准):
+#   PATH="/path/to/DataAnalysisAgent/.venv/bin:$PATH" \
+#     npx @deepseek-ai/dsh --profile tui --patch harnesses/deepseek/cordis.example.yml
+# (把 data-agent-capabilities 所在的 .venv/bin 前置到 PATH,mcp-client 才能
+#  启动能力服务器;mcp-client 子进程继承本进程环境。)
+#
+# patch 语义(verified 2026-08-26 @0.1.1-rc.2 dsh-app-boot):
+#   {insert: [...]}  追加新插件行(无 id 时追加到根列表)
+#   {id: ..., ...}   覆盖已有插件行(如 sandbox-policy)
+#
+# 若把本文件复制到仓库根目录再使用,name 路径请改为
+#   './harnesses/deepseek/src/index.ts'
+
+# ---- 官方 MCP client 插件:接入 DAA 能力服务器(19 个工具) ----
+# 工具以 mcp__daa__<capability_name> 形态出现,例如:
+#   mcp__daa__tabular_read_file / mcp__daa__sampling_compact_result ...
+- insert:
+    - id: mcp-daa
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: stdio          # StdioConfig(verified 2026-08-26 @0.1.1-rc.2)
+        serverName: daa           # 工具名前缀 mcp__daa__*
+        command: data-agent-capabilities  # PATH 查找(仓库 .venv/bin)
+        args: [mcp]
+        # env: {}                 # 需要时覆盖/追加子进程环境变量
+        # toolCallTimeoutMs: 120000
+        # failOnStartupError: false
+
+    # ---- 本适配插件:超大工具结果压缩 + 轨迹事件旁路 ----
+    # 不重复注册 MCP 工具;只挂 tools/post-execute(压缩)与 session/event(轨迹)。
+    # 可选环境变量:DAA_COMPACT_TRIGGER(压缩触发阈值,默认 8000 字符)。
+    - id: daa-capabilities
+      # 相对路径以 dsh profile 目录(~/.dsh/profiles/<profile>/)为基准解析。
+      # 推荐先做软链(见 README「安装」):ln -s <repo>/harnesses/deepseek ~/.dsh/profiles/<profile>/daa
+      name: './daa/src/index.ts'
+      # 备选:不做软链时直接写 file:// 绝对 URL(路径含空格需 %20 转义):
+      # name: 'file:///Users/you/Projects/DataAnalysisAgent/harnesses/deepseek/src/index.ts'
+
+# ---- 权限预设(说明) ----
+# dsh 默认 sandbox-policy 已是 workspace-write:
+#   mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+# 需要收紧/放宽时设置环境变量 DSH_PERMISSION_MODE(read-only|workspace-write|...)
+# 或在 patch 中覆盖 sandbox-policy 行,例如:
+# - id: sandbox-policy
+#   name: '@deepseek-ai/dsh-sandbox-policy'
+#   config:
+#     mode: workspace-write
+#     workspaceRoot: !!js process.cwd()

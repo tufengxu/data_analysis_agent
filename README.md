@@ -256,8 +256,27 @@ mypy src
 
 ## Quality Gate (Definition of Done)
 
-每次迭代须通过 `python scripts/quality_gate.py`(ruff / format / mypy / pytest / 架构漂移检测),
+每次迭代须通过 `python scripts/quality_gate.py`(ruff / format / mypy / pytest / 架构漂移检测 / TS 适配器检查),
 由阻断式 Stop hook 强制。详见 `docs/QUALITY_BAR.md`、`docs/DEVELOPMENT.md`、`docs/ARCHITECTURE.md`。
+
+## v2:能力核心层与双基座(2026-08)
+
+v2 把六大能力域(表格分析 / 可视化报告 / 因果分析推断 / 自进化 / 采样压缩)抽成
+**Harness 无关的能力核心层** `src/data_analysis_agent/capabilities/`,经
+**MCP stdio + CLI**(`data-agent-capabilities`)统一暴露,并由两个外部基座适配层
+(`harnesses/pi/` = Pi Agent Core、`harnesses/deepseek/` = DeepSeek Harness)组装成
+可端到端运行的数据分析 Agent——两基座调用的是**同一份能力实现**(传输一致性有测试守护)。
+v1(`data-agent` CLI 与全部既有测试)保持不回归。
+
+```bash
+uv pip install -e ".[data,dev,web,serving]"
+.venv/bin/data-agent-capabilities list          # 19 个能力
+.venv/bin/python examples/v2/demo_e2e.py       # 无 LLM 端到端演示
+(cd harnesses/pi && npm install && npm run smoke)
+```
+
+详见 `docs/ARCHITECTURE.md` v2 章节、`docs/V2_RUNBOOK.md`(运行手册)、
+`docs/THIRD_HARNESS_GUIDE.md`(接入第三基座只需一个 adapter 目录)。
 
 ## Architecture Reference
 

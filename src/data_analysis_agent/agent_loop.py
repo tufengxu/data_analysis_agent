@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import ArtifactStore
+from .capabilities.sampling.compactor import CompactRequest, DefaultToolResultCompactor
 from .context.compression import ContextCompressor, estimate_tokens, message_to_text
 from .events import (
     AgentEvent,
@@ -48,7 +49,7 @@ from .protocol.messages import (
     ToolUseBlock,
 )
 from .recovery import RecoveryPolicy
-from .sampling import SamplingConfig, compact_result
+from .sampling import SamplingConfig
 from .sampling.result_store import ResultStore
 from .security.permissions import PermissionEngine
 from .security.sanitizer import frame_as_data, strip_structural
@@ -196,6 +197,7 @@ class AgentLoop:
         self.compressor = compressor or ContextCompressor()
         self.sampling_config = sampling_config or SamplingConfig()
         self.result_store = result_store
+        self._compactor = DefaultToolResultCompactor(result_store)
         self.store = store
         self.skill_registry = skill_registry
         self.permission_engine = permission_engine
@@ -612,21 +614,20 @@ class AgentLoop:
             try:
                 tool_result: ToolResult = await tool.call(block.input)
                 pressure = self._context_pressure(state.messages)
-                content, was_compacted = compact_result(
-                    tool_result.content,
-                    tool.max_result_size_chars,
-                    self.sampling_config,
-                    pressure,
-                )
-                if was_compacted and self.result_store is not None:
-                    stored = self.result_store.put(
-                        block.id, tool_result.content, {"tool": block.name}
+                # v2: tool-result compaction routes through the capability-layer
+                # ToolResultCompactor seam (same compact_result semantics + recall
+                # handle wiring as pre-v2, byte-identical marker).
+                compacted = self._compactor.compact(
+                    CompactRequest(
+                        content=tool_result.content,
+                        max_chars=tool.max_result_size_chars,
+                        context_pressure=pressure,
+                        config=self.sampling_config,
+                        result_id=block.id,
+                        tool_name=block.name,
                     )
-                    if stored:
-                        content += (
-                            "\n\n[完整结果已缓存。回取: retrieve_result("
-                            f'result_id="{block.id}", offset=0, limit=50)]'
-                        )
+                )
+                content = compacted.content
                 artifacts = self._persist_artifacts(block.id, tool_result)
                 if artifacts:
                     content += "\n\n[产物已保存: " + ", ".join(artifacts) + "]"

@@ -36,8 +36,10 @@ logger = logging.getLogger(__name__)
 
 # Source of the self-contained DataFrame summarizer, inlined into the sandbox
 # script (the subprocess runs with PYTHONPATH="" and cannot import this package).
+# v2: physically migrated to capabilities/sampling/ — the v1 path is now a shim
+# that imports this package, so inlining must read the real file.
 _SANDBOX_SUMMARY_SRC = (
-    Path(__file__).resolve().parent.parent / "sampling" / "sandbox_summary.py"
+    Path(__file__).resolve().parent.parent / "capabilities" / "sampling" / "sandbox_summary.py"
 ).read_text(encoding="utf-8")
 
 _spawn_subprocess = asyncio.create_subprocess_exec
