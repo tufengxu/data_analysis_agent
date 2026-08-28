@@ -4,17 +4,17 @@
 
 ## P0 — 规格先行(PR-0)
 
-- [ ] 0.1 openspec change 五件套(proposal/design/tasks/specs delta)
-- [ ] 0.2 ADR 0012(docs/adr/0012-context-compression-upgrade.md)
-- [ ] 0.3 调研文档入库(docs/data_context_compression_research.md)并过质量门
-- [ ] 0.4 D0 解耦原则入规格(核心逻辑仅落能力层;适配器去触发镜像;压力为基座可插拔输入)
+- [x] 0.1 openspec change 五件套(proposal/design/tasks/specs delta)(PR #55)
+- [x] 0.2 ADR 0012(docs/adr/0012-context-compression-upgrade.md)(PR #55)
+- [x] 0.3 调研文档入库(docs/data_context_compression_research.md)并过质量门(PR #55,gate 七步绿)
+- [x] 0.4 D0 解耦原则入规格(核心逻辑仅落能力层;适配器去触发镜像;压力为基座可插拔输入)(PR #55,design.md D0 + sampling spec"压缩决策单一事实源")
 
 ## P1 — PR-1:数值呈现 + L1 统计补强(P0-1/P0-2)
 
-- [ ] 1.1 render._num 千分位/3 位有效/防科学计数法;_fmt_stats 渲染新字段与 top-k 占比
-- [ ] 1.2 sandbox_summary:数值 cardinality + 等深直方图;datetime 粒度与跨度;离群行轮询全数值列;identifier-like 标注
-- [ ] 1.3 text_summary 估算路径补 cardinality/直方图;model.py 文档同步
-- [ ] 1.4 测试:千分位/直方图/粒度/轮询离群/identifier;现锁绿(v1↔v2 等价、三传输确定性)
+- [x] 1.1 render._num 千分位/3 位有效/防科学计数法;_fmt_stats 渲染新字段与 top-k 占比(test_render_new_stat_fields_and_number_format、test_render_avoids_scientific_notation_in_common_range)
+- [x] 1.2 sandbox_summary:数值 cardinality + 等深直方图;datetime 粒度与跨度;离群行轮询全数值列;identifier-like 标注(test_sandbox_enriched_stats_and_granularity、test_sandbox_outliers_round_robin_across_numeric_columns)
+- [x] 1.3 text_summary 估算路径补 cardinality/直方图;model.py 文档同步(test_text_summary_histogram_and_cardinality、identifier note、outlier_col)
+- [x] 1.4 测试:千分位/直方图/粒度/轮询离群/identifier;现锁绿(v1↔v2 等价、三传输确定性)(tests/test_sampling.py + test_tool_result_compactor + test_capability_serving 全绿)
 
 ## P2 — PR-2:触发压力自适应 + 页豁免 + 桩 digest + 适配器解耦(P0-3+D0)
 

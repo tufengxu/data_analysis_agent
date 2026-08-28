@@ -9,6 +9,7 @@ further to head+tail truncation — never worse than the original behavior.
 
 from __future__ import annotations
 
+import bisect as _bisect
 import csv as _csv
 import random
 import re
@@ -146,6 +147,7 @@ def summarize_table_rows(
 
     column_summaries: list[ColumnSummary] = []
     numeric_columns: dict[int, list[float]] = {}
+    notes: list[str] = []
     for idx, name in enumerate(headers):
         values = list(columns_by_index[idx]) if idx < len(columns_by_index) else []
         null_count = sum(1 for v in values if str(v).strip().lower() in _NULL_TOKENS)
@@ -154,6 +156,9 @@ def summarize_table_rows(
         if kind == "numeric":
             numeric_columns[idx] = parsed
             stats = _numeric_stats(parsed, config)
+            non_null = len(values) - null_count
+            if len(parsed) == non_null and stats["cardinality"] == non_null and non_null > 50:
+                notes.append(f"列 {name} 每值唯一,疑似标识符(identifier-like)。")
         elif kind == "categorical":
             counter = Counter(parsed)
             stats = {
@@ -175,7 +180,6 @@ def summarize_table_rows(
     sample_rows, method = _sample_rows(row_dicts, rows, headers, numeric_columns, config, rng)
     outlier_rows = _outlier_rows(row_dicts, numeric_columns, headers, config)
 
-    notes: list[str] = []
     if n_rows > len(sample_rows):
         notes.append("列统计为解析样本的估算值(非精确);如需精确值请在 pandas 内重算。")
 
@@ -219,8 +223,25 @@ def _numeric_stats(numbers: list[float], config: SamplingConfig) -> dict[str, An
         "mean": mean,
         "std": variance**0.5,
         "quantiles": quantiles,
+        "histogram": _histogram(ordered, 8),
+        "cardinality": len(set(ordered)),
         "n_outliers": n_outliers,
     }
+
+
+def _histogram(ordered: list[float], n_bins: int = 8) -> list[int]:
+    """Equi-depth bucket counts from the already-sorted value list."""
+    n = len(ordered)
+    if n == 0:
+        return []
+    edges = sorted({_quantile(ordered, i / n_bins) for i in range(n_bins + 1)})
+    if len(edges) < 2:
+        return [n]
+    counts = [0] * (len(edges) - 1)
+    for x in ordered:
+        pos = min(max(_bisect.bisect_right(edges, x) - 1, 0), len(edges) - 2)
+        counts[pos] += 1
+    return counts
 
 
 def _quantile(ordered: list[float], prob: float) -> float:
@@ -279,25 +300,51 @@ def _outlier_rows(
     headers: list[str],
     config: SamplingConfig,
 ) -> list[dict[str, Any]]:
-    if not config.include_outliers or not numeric_columns:
-        return []
-    idx = next(iter(numeric_columns))
-    ordered = sorted(numeric_columns[idx])
-    q1, q3 = _quantile(ordered, 0.25), _quantile(ordered, 0.75)
-    iqr = q3 - q1
-    low_fence, high_fence = q1 - 1.5 * iqr, q3 + 1.5 * iqr
-    name = headers[idx]
+    """IQR outlier rows, round-robin across ALL numeric columns.
 
-    outliers: list[dict[str, Any]] = []
-    for row_dict in row_dicts:
-        raw = str(row_dict.get(name, "")).strip()
-        if _NUM_RE.match(raw):
-            value = float(raw)
-            if value < low_fence or value > high_fence:
-                outliers.append(row_dict)
-                if len(outliers) >= config.max_outlier_rows:
-                    break
-    return outliers
+    Each returned row carries an ``outlier_col`` key naming the flagging
+    column (mirrors the sandbox path so both render identically).
+    """
+    if not config.include_outliers or not numeric_columns or config.max_outlier_rows <= 0:
+        return []
+    candidates: list[tuple[str, list[dict[str, Any]]]] = []
+    for idx in numeric_columns:
+        name = headers[idx]
+        ordered = sorted(numeric_columns[idx])
+        q1, q3 = _quantile(ordered, 0.25), _quantile(ordered, 0.75)
+        iqr = q3 - q1
+        low_fence, high_fence = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        hits = []
+        for row_dict in row_dicts:
+            raw = str(row_dict.get(name, "")).strip()
+            if _NUM_RE.match(raw):
+                value = float(raw)
+                if value < low_fence or value > high_fence:
+                    hits.append(row_dict)
+        if hits:
+            candidates.append((name, hits))
+
+    rows: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    cursors = [0] * len(candidates)
+    while len(rows) < config.max_outlier_rows:
+        picked = False
+        for ci, (name, hits) in enumerate(candidates):
+            if len(rows) >= config.max_outlier_rows:
+                break
+            while cursors[ci] < len(hits):
+                row_dict = hits[cursors[ci]]
+                cursors[ci] += 1
+                key = id(row_dict)
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append({**row_dict, "outlier_col": name})
+                picked = True
+                break
+        if not picked:
+            break
+    return rows
 
 
 # --------------------------------------------------------------------------- #

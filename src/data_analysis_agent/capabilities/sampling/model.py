@@ -18,10 +18,11 @@ class ColumnSummary:
 
     ``stats`` is kind-specific:
         - numeric: ``min`` / ``max`` / ``mean`` / ``std`` /
-          ``quantiles`` (list of ``[prob, value]``) / ``n_outliers``
+          ``quantiles`` (list of ``[prob, value]``) / ``histogram`` (equi-depth
+          bucket counts) / ``cardinality`` / ``n_outliers``
         - categorical / bool: ``cardinality`` /
           ``top_k`` (list of ``[value, count]``) / ``tail_truncated``
-        - datetime: ``min`` / ``max``
+        - datetime: ``min`` / ``max`` / ``granularity`` / ``span_days``
     """
 
     name: str
