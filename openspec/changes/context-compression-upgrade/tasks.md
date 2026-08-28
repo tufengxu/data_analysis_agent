@@ -44,9 +44,9 @@
 
 ## P6 — PR-5:查询下取(P1-2)
 
-- [ ] 6.1 capabilities/sampling/slicing.py(mode/columns/filter)+ manifest 登记
-- [ ] 6.2 retrieve_result 工具与 serving retrieve_spec 扩键(只增)
-- [ ] 6.3 测试:各模式/谓词/非法输入;serving roundtrip
+- [x] 6.1 capabilities/sampling/slicing.py(单谓词/投影/head-tail-sample/fail-closed)+ v1 shim + manifest 登记(tests/test_slicing.py ×6)
+- [x] 6.2 retrieve_result 工具与 serving retrieve_spec 扩键(只增;ResultStore.fetch_content 取全文)
+- [x] 6.3 测试:各模式/谓词/非法输入/非表格降级(test_retrieve_tool ×4);serving roundtrip 含 filter(test_retrieve_slice_capability_roundtrip)
 
 ## P7 — PR-6:JSON 摘要(P1-3)
 

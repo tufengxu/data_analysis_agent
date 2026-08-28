@@ -270,3 +270,27 @@ class TestTransportConsistency:
                     assert via_cli["data"] == inproc["data"], name
 
         asyncio.run(_run())
+
+
+async def test_retrieve_slice_capability_roundtrip(env_dirs, tmp_path):
+    from data_analysis_agent.capabilities.contracts import CapabilityRegistry
+
+    registry = CapabilityRegistry()
+    from data_analysis_agent.capabilities.serving.registry import register_sampling_capabilities
+    from data_analysis_agent.sampling.result_store import ResultStore
+
+    store = ResultStore(tmp_path / "slice-results")
+    register_sampling_capabilities(registry, store=store)
+    csv = "\n".join(["region,units,price"] + [f"{'abc'[i % 3]},{i},{i * 10}" for i in range(1500)])
+    await registry.dispatch(
+        "sampling_compact_result",
+        {"content": csv, "context_pressure": 0.9, "result_id": "slice-1"},
+    )
+    envelope = await registry.dispatch(
+        "retrieve_result",
+        {"result_id": "slice-1", "mode": "head", "limit": 5, "filter": "units<10"},
+    )
+    assert envelope["ok"] is True
+    assert envelope["data"]["matched_rows"] == 10
+    assert envelope["data"]["total_rows"] == 1500
+    assert envelope["content"].startswith("[result_id=slice-1 | mode=head")

@@ -228,6 +228,28 @@ class ResultStore:
             for rec in alive[: max(1, limit)]
         ]
 
+    def fetch_content(self, result_id: str) -> str | None:
+        """Full original content (TTL-checked) for structured slicing (D6).
+
+        Same expiry semantics as ``get`` (expired entries are dropped), but
+        returns the unpaged text so the slicing module can parse and filter
+        the whole table.
+        """
+        if not self._available:
+            return None
+        self._refresh_if_needed()
+        rec = self._index.get(result_id)
+        if rec is None:
+            return None
+        if self._clock() - rec.get("created_at", 0) > self.ttl_seconds:
+            self._drop(result_id)
+            self._rewrite_index()
+            return None
+        try:
+            return Path(rec["file"]).read_text(encoding="utf-8")
+        except OSError:
+            return None
+
     def get(
         self,
         result_id: str,
