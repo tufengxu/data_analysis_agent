@@ -294,3 +294,156 @@ def test_gating_forces_compression_over_max_chars():
 def test_compact_result_default_pressure_is_zero():
     out, was = compact_result("small", max_chars=50_000)
     assert (out, was) == ("small", False)
+
+
+# --------------------------------------------------------------------------- #
+# D1 number rendering + L1 stat enrichment (context-compression-upgrade)
+# --------------------------------------------------------------------------- #
+def test_render_new_stat_fields_and_number_format():
+    summary = {
+        "n_rows": 1000,
+        "n_cols": 3,
+        "columns": [
+            {
+                "name": "v",
+                "kind": "numeric",
+                "count": 1000,
+                "null_count": 0,
+                "stats": {
+                    "min": 0,
+                    "max": 100000,
+                    "mean": 49.5,
+                    "std": 28.8,
+                    "quantiles": [[0.5, 49.5]],
+                    "histogram": [100, 150, 200, 200, 150, 100, 50, 50],
+                    "cardinality": 950,
+                    "n_outliers": 2,
+                },
+            },
+            {
+                "name": "ts",
+                "kind": "datetime",
+                "count": 1000,
+                "null_count": 0,
+                "stats": {
+                    "min": "2024-01-01",
+                    "max": "2024-12-31",
+                    "granularity": "day",
+                    "span_days": 365,
+                },
+            },
+            {
+                "name": "cat",
+                "kind": "categorical",
+                "count": 1000,
+                "null_count": 0,
+                "stats": {
+                    "cardinality": 3,
+                    "top_k": [["a", 600], ["b", 300], ["c", 100]],
+                },
+            },
+        ],
+        "sample_rows": [{"v": 100000, "cat": "a"}],
+        "outlier_rows": [],
+        "sampling_method": "reservoir",
+        "fidelity_level": "mid",
+        "notes": [],
+        "truncated": True,
+    }
+    out = render_summary_dict(summary)
+    # D1: thousands separators on large ints, in stats and sample rows
+    assert "max=100,000" in out
+    assert "| 100,000 | a |" in out
+    # L1 enrichment: histogram / granularity / span / top-k share
+    assert "hist=[100,150,200,200,150,100,50,50]" in out
+    assert "card=950" in out
+    assert "gran=day" in out
+    assert "span=365d" in out
+    assert "a:600(60%)" in out
+    assert "b:300(30%)" in out
+
+
+def test_render_avoids_scientific_notation_in_common_range():
+    summary = {
+        "n_rows": 10,
+        "n_cols": 1,
+        "columns": [
+            {
+                "name": "v",
+                "kind": "numeric",
+                "count": 10,
+                "null_count": 0,
+                "stats": {"max": 1234567.5, "quantiles": [[0.5, 0.00042]]},
+            }
+        ],
+        "sample_rows": [],
+        "outlier_rows": [],
+        "sampling_method": "reservoir",
+        "fidelity_level": "mid",
+        "notes": [],
+        "truncated": False,
+    }
+    out = render_summary_dict(summary)
+    assert "max=1,230,000" in out  # 3 significant digits, comma-grouped
+    assert "e+" not in out and "e-" not in out
+
+
+def test_text_summary_histogram_and_cardinality():
+    headers, rows = ts.detect_table(_make_csv(120))
+    summary = ts.summarize_table_rows(headers, rows, SMALL_TRIGGER)
+    stats = {c.name: c for c in summary.columns}["value"].stats
+    assert sum(stats["histogram"]) == 120
+    assert stats["cardinality"] == 51  # values 0..49 plus the 100000 outlier
+
+
+def test_text_summary_identifier_note_for_unique_numeric_column():
+    lines = ["id,txt"] + [f"{i},x{i}" for i in range(60)]
+    headers, rows = ts.detect_table("\n".join(lines))
+    summary = ts.summarize_table_rows(headers, rows, SMALL_TRIGGER)
+    assert any("identifier-like" in n for n in summary.notes)
+
+
+def test_text_outlier_rows_carry_source_column():
+    headers, rows = ts.detect_table(_make_csv(120))
+    summary = ts.summarize_table_rows(headers, rows, SMALL_TRIGGER)
+    assert summary.outlier_rows
+    assert all(r.get("outlier_col") == "value" for r in summary.outlier_rows)
+
+
+def test_sandbox_enriched_stats_and_granularity():
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("numpy")
+    from data_analysis_agent.sampling import sandbox_summary as ss
+
+    df = pd.DataFrame(
+        {
+            "id": list(range(120)),
+            "v": list(range(120)),
+            "ts": pd.date_range("2024-01-01", periods=120, freq="D"),
+        }
+    )
+    summary = ss.summarize_dataframe(df, max_sample_rows=5)
+    by_name = {c["name"]: c for c in summary["columns"]}
+    assert sum(by_name["v"]["stats"]["histogram"]) == 120
+    assert by_name["v"]["stats"]["cardinality"] == 120
+    assert by_name["ts"]["stats"]["granularity"] == "day"
+    assert by_name["ts"]["stats"]["span_days"] == 119
+    assert any("identifier-like" in n for n in summary["notes"])
+
+
+def test_sandbox_outliers_round_robin_across_numeric_columns():
+    pd = pytest.importorskip("pandas")
+    from data_analysis_agent.sampling import sandbox_summary as ss
+
+    df = pd.DataFrame({"a": [1.0] * 100, "b": [1.0] * 100})
+    df.loc[3, "a"] = 900.0
+    df.loc[7, "b"] = 900.0
+    summary = ss.summarize_dataframe(df, max_sample_rows=5, max_outlier_rows=2)
+    tags = [r["outlier_col"] for r in summary["outlier_rows"]]
+    assert tags == ["a", "b"]
+    # first numeric column without hits no longer starves the second one
+    df2 = pd.DataFrame({"a": [1.0] * 100, "b": [1.0] * 100})
+    df2.loc[5, "b"] = 1000.0
+    summary2 = ss.summarize_dataframe(df2, max_sample_rows=5, max_outlier_rows=3)
+    assert summary2["outlier_rows"]
+    assert all(r["outlier_col"] == "b" for r in summary2["outlier_rows"])

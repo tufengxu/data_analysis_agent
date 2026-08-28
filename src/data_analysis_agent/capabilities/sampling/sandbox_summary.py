@@ -40,6 +40,7 @@ def summarize_dataframe(
 
     columns: list[dict[str, Any]] = []
     numeric_names: list[Any] = []
+    notes: list[str] = []
     for name in df.columns:
         col = df[name]
         null_count = int(col.isna().sum())
@@ -57,6 +58,9 @@ def summarize_dataframe(
             numeric_names.append(name)
             arr = col.dropna().to_numpy(dtype="float64")
             stats = _numeric_stats(arr, quantiles, np)
+            stats["cardinality"] = int(col.nunique(dropna=True))
+            if stats["cardinality"] == count and count > 50:
+                notes.append(f"列 {name} 每值唯一,疑似标识符(identifier-like)。")
         elif pd.api.types.is_datetime64_any_dtype(col):
             kind = "datetime"
             non_null = col.dropna()
@@ -64,6 +68,9 @@ def summarize_dataframe(
                 "min": str(non_null.min()) if len(non_null) else None,
                 "max": str(non_null.max()) if len(non_null) else None,
             }
+            if len(non_null) > 1:
+                stats["granularity"] = _dt_granularity(non_null)
+                stats["span_days"] = int((non_null.max() - non_null.min()).days)
         else:
             kind = "categorical"
             cardinality = int(col.nunique(dropna=True))
@@ -90,7 +97,6 @@ def summarize_dataframe(
     sample_rows = _records(sample_df)
     outlier_rows = _outlier_rows(df, numeric_names, include_outliers, max_outlier_rows)
 
-    notes: list[str] = []
     if n_rows > len(sample_rows):
         notes.append("列统计为全量精确计算;样本行为代表性子集。")
 
@@ -121,8 +127,53 @@ def _numeric_stats(arr: Any, quantiles: tuple[float, ...], np: Any) -> dict[str,
         "mean": _round(float(arr.mean())),
         "std": _round(float(arr.std())),
         "quantiles": q_pairs,
+        "histogram": _equidepth_counts(arr, 8, np),
         "n_outliers": n_outliers,
     }
+
+
+def _equidepth_counts(arr: Any, n_bins: int, np: Any) -> list[int]:
+    """Equi-depth bucket counts (distribution shape in one compact line).
+
+    Boundaries are the n_bins quantiles, de-duplicated (constant columns
+    collapse to a single bucket). np.histogram's last bin is right-closed,
+    matching the max edge, so counts always sum to arr.size.
+    """
+    edges = np.unique(np.quantile(arr, [i / n_bins for i in range(n_bins + 1)]))
+    if edges.size < 2:
+        return [int(arr.size)]
+    counts, _ = np.histogram(arr, bins=edges)
+    return [int(c) for c in counts]
+
+
+_GRANULARITY_UNITS: tuple[tuple[str, float], ...] = (
+    ("second", 1.0),
+    ("minute", 60.0),
+    ("hour", 3600.0),
+    ("day", 86400.0),
+    ("month", 2592000.0),
+    ("year", 31536000.0),
+)
+
+
+def _dt_granularity(non_null: Any) -> str:
+    """Label the unit whose duration is closest (log scale) to the median delta.
+
+    A daily series (delta 86400s) is "day", not "hour": closest-unit beats
+    threshold ladders, which misclassify exact unit multiples.
+    """
+    diffs = non_null.diff().dropna()
+    if diffs.empty:
+        return "unknown"
+    seconds = float(diffs.median().total_seconds())
+    if seconds <= 0:
+        return "unknown"
+    best_label, best_score = "unknown", None
+    for label, unit in _GRANULARITY_UNITS:
+        score = abs(math.log2(seconds / unit))
+        if best_score is None or score < best_score:
+            best_label, best_score = label, score
+    return best_label
 
 
 def _sample_df(
@@ -169,16 +220,47 @@ def _outlier_rows(
     include: bool,
     max_rows: int,
 ) -> list[dict[str, Any]]:
-    if not include or not numeric_names:
+    """IQR outlier rows, round-robin across ALL numeric columns.
+
+    Each returned row carries an ``outlier_col`` key naming the column whose
+    fences flagged it, so provenance survives the compact Markdown render.
+    """
+    if not include or not numeric_names or max_rows <= 0:
         return []
-    name = numeric_names[0]
-    col = df[name].dropna()
-    if col.empty:
-        return []
-    q1, q3 = float(col.quantile(0.25)), float(col.quantile(0.75))
-    iqr = q3 - q1
-    mask = (df[name] < q1 - 1.5 * iqr) | (df[name] > q3 + 1.5 * iqr)
-    return _records(df[mask].head(max_rows))
+    candidates: list[tuple[Any, list[Any]]] = []
+    for name in numeric_names:
+        col = df[name].dropna()
+        if col.empty:
+            continue
+        q1, q3 = float(col.quantile(0.25)), float(col.quantile(0.75))
+        iqr = q3 - q1
+        mask = (df[name] < q1 - 1.5 * iqr) | (df[name] > q3 + 1.5 * iqr)
+        hits = list(df.index[mask])
+        if hits:
+            candidates.append((name, hits))
+
+    rows: list[dict[str, Any]] = []
+    used: set[Any] = set()
+    cursors = [0] * len(candidates)
+    while len(rows) < max_rows:
+        picked = False
+        for ci, (name, hits) in enumerate(candidates):
+            if len(rows) >= max_rows:
+                break
+            while cursors[ci] < len(hits):
+                index = hits[cursors[ci]]
+                cursors[ci] += 1
+                if index in used:
+                    continue
+                used.add(index)
+                record = {str(key): _jsonable(value) for key, value in df.loc[index].items()}
+                record["outlier_col"] = str(name)
+                rows.append(record)
+                picked = True
+                break
+        if not picked:
+            break
+    return rows
 
 
 def _records(frame: Any) -> list[dict[str, Any]]:
