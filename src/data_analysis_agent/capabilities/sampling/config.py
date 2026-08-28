@@ -26,6 +26,9 @@ class SamplingConfig:
             ask floor adapters may mirror (the server stays the single source
             of truth for the real decision).
         fidelity_level: one of ``low`` / ``mid`` / ``high``.
+        adaptive_fidelity: when True (default), context pressure >= 0.75
+            downgrades the effective fidelity to ``low`` (D8) — trigger and
+            seed overrides survive. Set False to pin the configured level.
         max_sample_rows: number of representative detail rows to keep.
         top_k: number of high-frequency values to keep per categorical column.
         quantiles: quantile probabilities to report for numeric columns.
@@ -42,6 +45,7 @@ class SamplingConfig:
     trigger_pressure_scale: float = 0.5
     trigger_floor_chars: int = 2000
     fidelity_level: str = "mid"
+    adaptive_fidelity: bool = True
     max_sample_rows: int = 20
     top_k: int = 10
     quantiles: tuple[float, ...] = (0.01, 0.25, 0.5, 0.75, 0.99)

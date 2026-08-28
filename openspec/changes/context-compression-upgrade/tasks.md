@@ -55,8 +55,8 @@
 
 ## P8 — PR-7:fidelity 压力自适应(P1-4)
 
-- [ ] 8.1 adaptive_fidelity 开关 + compactor 高压降档;serving 白名单加键
-- [ ] 8.2 测试:降档/关闭/三传输一致性
+- [x] 8.1 SamplingConfig.adaptive_fidelity(默认开)+ DefaultToolResultCompactor 高压(≥0.75)降档 low(trigger/seed 覆盖保留);AgentConfig.sampling_adaptive_fidelity + serving 白名单加键
+- [x] 8.2 测试:TestAdaptiveFidelity ×4(降档/中压不变/显式锁档/保留 trigger 覆盖);显式 high 用例改锁档语义;三传输一致性保持绿
 
 ## P9 — PR-8:评测闭环 + 格式臂(P2-1+P2-3)
 
