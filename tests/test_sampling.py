@@ -485,3 +485,19 @@ def test_recall_page_exempt_from_compaction():
     out, was = compact_result(page, 50_000, config, context_pressure=1.0)
     assert was is False
     assert out == page  # deliberate raw recall: never re-summarized
+
+
+def test_render_variable_title():
+    summary = {
+        "n_rows": 10,
+        "n_cols": 1,
+        "columns": [],
+        "sample_rows": [],
+        "outlier_rows": [],
+        "sampling_method": "reservoir",
+        "fidelity_level": "mid",
+        "notes": [],
+        "truncated": False,
+    }
+    assert render_summary_dict(summary, variable="orders").startswith("### orders · 数据采样摘要")
+    assert render_summary_dict(summary).startswith("### 数据采样摘要")

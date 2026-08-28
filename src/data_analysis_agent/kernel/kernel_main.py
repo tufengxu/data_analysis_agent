@@ -87,31 +87,84 @@ def _sampling_params() -> dict[str, Any]:
 def _auto_summarize(
     namespace: dict[str, Any],
     params: dict[str, Any],
-    agent_summarize: Callable[[Any], Any],
+    agent_summarize: Callable[[Any, str], Any],
+    frame_snapshot: dict[str, tuple[int, int, int]],
 ) -> None:
-    """Summarize an oversized ``result`` DataFrame/Series after user code runs."""
+    """Summarize new/changed top-level DataFrames after user code runs (P1-1).
+
+    ``result`` keeps its historical priority path (same trigger_rows gate);
+    every OTHER user-named frame that is new or whose (id, rows, cols)
+    changed since last request is also summarized — largest first, at most
+    3 per request (pipe-size + context budget). ``agent_summarize`` is
+    called with the variable name so the model can track provenance across
+    turns. The snapshot dedups unchanged frames; names that vanished are
+    pruned.
+    """
     trigger_rows = params.get("trigger_rows")
     if not isinstance(trigger_rows, int):
-        return
-    result_obj = namespace.get("result")
-    if result_obj is None:
         return
     try:
         import pandas as pd
     except Exception:
         return  # pandas optional: degrade to no-op
+
+    def _shape(value: Any) -> tuple[int, int]:
+        rows = int(value.shape[0])
+        cols = int(value.shape[1]) if value.ndim > 1 else 1
+        return rows, cols
+
     try:
+        result_obj = namespace.get("result")
         if isinstance(result_obj, pd.DataFrame | pd.Series) and (
             int(result_obj.shape[0]) > trigger_rows
         ):
-            agent_summarize(result_obj)
+            agent_summarize(result_obj, "result")
+            frame_snapshot["result"] = (id(result_obj), *_shape(result_obj))
     except Exception as exc:
         # stderr is the kernel's only observability channel (manager redirects
         # it to a log + crash tail); don't fail silently like a no-op.
         print(f"[auto_summarize] skipped: {exc}", file=sys.stderr)
 
+    try:
+        candidates: list[tuple[str, Any, int, int]] = []
+        for name, value in list(namespace.items()):
+            if not isinstance(name, str):
+                continue
+            if (
+                name == "result"
+                or name.startswith("_")
+                or name
+                in (
+                    "agent_result",
+                    "agent_summarize",
+                )
+            ):
+                continue
+            if not isinstance(value, pd.DataFrame | pd.Series):
+                continue
+            rows, cols = _shape(value)
+            if frame_snapshot.get(name) == (id(value), rows, cols):
+                continue  # unchanged since last request
+            if rows > trigger_rows:
+                candidates.append((name, value, rows, cols))
+            else:
+                frame_snapshot[name] = (id(value), rows, cols)  # small: map only
+        candidates.sort(key=lambda c: -c[2])
+        for name, value, rows, cols in candidates[:3]:
+            agent_summarize(value, name)
+            frame_snapshot[name] = (id(value), rows, cols)
+        for stale in [n for n in frame_snapshot if n not in namespace]:
+            del frame_snapshot[stale]
+    except Exception as exc:
+        print(f"[auto_summarize] variable scan skipped: {exc}", file=sys.stderr)
 
-def _run_request(code: str, namespace: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+
+def _run_request(
+    code: str,
+    namespace: dict[str, Any],
+    params: dict[str, Any],
+    frame_snapshot: dict[str, tuple[int, int, int]],
+) -> dict[str, Any]:
     """Execute one code block in the persistent namespace."""
     outputs: list[Any] = []
 
@@ -119,7 +172,7 @@ def _run_request(code: str, namespace: dict[str, Any], params: dict[str, Any]) -
         if isinstance(outs, list):
             outputs.extend(outs)
 
-    def agent_summarize(obj: Any) -> Any:
+    def agent_summarize(obj: Any, variable: str = "result") -> Any:
         summarizer = globals().get("summarize_dataframe")
         if summarizer is None:
             print("[agent_summarize] skipped: summarizer unavailable")
@@ -129,9 +182,10 @@ def _run_request(code: str, namespace: dict[str, Any], params: dict[str, Any]) -
             kwargs["quantiles"] = tuple(kwargs["quantiles"])
         try:
             summary = summarizer(obj, **kwargs)
-            outputs.append({"type": "table_summary", "summary": summary})
+            outputs.append({"type": "table_summary", "variable": variable, "summary": summary})
             print(
-                f"[agent_summarize] summarized {summary['n_rows']} rows x {summary['n_cols']} cols"
+                f"[agent_summarize] summarized {variable}: "
+                f"{summary['n_rows']} rows x {summary['n_cols']} cols"
             )
             return summary
         except Exception as exc:
@@ -147,7 +201,7 @@ def _run_request(code: str, namespace: dict[str, Any], params: dict[str, Any]) -
         code_obj = compile(code, "<agent>", "exec")
         with redirect_stdout(out_buf), redirect_stderr(err_buf):
             _EXECUTE(code_obj, namespace)
-            _auto_summarize(namespace, params, agent_summarize)
+            _auto_summarize(namespace, params, agent_summarize, frame_snapshot)
     except (Exception, SystemExit, KeyboardInterrupt):
         # The kernel must outlive user-code failures, including sys.exit().
         # Clipped: a giant exception message (e.g. str(big_df) in the repr)
@@ -166,6 +220,7 @@ def _run_request(code: str, namespace: dict[str, Any], params: dict[str, Any]) -
 def main() -> None:
     params = _sampling_params()
     namespace: dict[str, Any] = {"__name__": "__main__"}
+    frame_snapshot: dict[str, tuple[int, int, int]] = {}
     real_stdout = sys.stdout
     for raw_line in sys.stdin:
         line = raw_line.strip()
@@ -177,7 +232,7 @@ def main() -> None:
             continue
         code = request.get("code")
         if isinstance(code, str):
-            response = _run_request(code, namespace, params)
+            response = _run_request(code, namespace, params, frame_snapshot)
         else:
             response = {
                 "ok": False,

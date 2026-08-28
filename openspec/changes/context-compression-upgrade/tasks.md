@@ -33,9 +33,9 @@
 
 ## P4 — PR-4a:变量地图(P1-1 第一步)
 
-- [ ] 4a.1 kernel_main 快照 + 多帧摘要(至多 3,variable 键)
-- [ ] 4a.2 python_exec 透传 variable;render 变量标题
-- [ ] 4a.3 测试:多帧/快照去重/上限;8MB 回归
+- [x] 4a.1 kernel_main 快照(name→id/rows/cols)+ 多帧摘要(至多 3 最大优先,variable 键;result 路径也带 variable;小帧只入快照不摘要)(test_kernel ×3)
+- [x] 4a.2 python_exec._compose_result 透传 variable;render_summary_dict(variable=) 标题(test_render_variable_title)
+- [x] 4a.3 快照去重/上限/被截帧下轮补摘要;8MB 序列化回归(kernel 测试套保持绿)
 
 ## P5 — PR-4b:schema 去重 delta 渲染(P1-1 第二步,视 4a 效果)
 
