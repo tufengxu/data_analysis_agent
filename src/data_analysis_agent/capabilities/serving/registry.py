@@ -31,6 +31,7 @@ from data_analysis_agent.capabilities.sampling import (
     SamplingConfig,
 )
 from data_analysis_agent.capabilities.sampling.result_store import RetrievedPage
+from data_analysis_agent.capabilities.sampling.slicing import render_slice, slice_stored_table
 from data_analysis_agent.capabilities.tabular import register_all as register_tabular
 
 
@@ -137,6 +138,37 @@ def register_sampling_capabilities(
         if offset < 0 or not 1 <= limit <= 500:
             raise CapabilityError("validation_error", "offset >= 0 and 1 <= limit <= 500 required")
         query = input_data.get("query")
+        mode = input_data.get("mode", "page")
+        if mode != "page":
+            content = store.fetch_content(result_id)
+            if content is None:
+                raise CapabilityError("not_found", f"result_id 不存在或已过期: {result_id}")
+            try:
+                table = slice_stored_table(
+                    content,
+                    result_id=result_id,
+                    tool="",
+                    mode=str(mode),
+                    columns=input_data.get("columns")
+                    if isinstance(input_data.get("columns"), list)
+                    else None,
+                    filter_text=input_data.get("filter")
+                    if isinstance(input_data.get("filter"), str)
+                    else None,
+                    limit=limit,
+                )
+            except ValueError as exc:
+                raise CapabilityError("validation_error", str(exc)) from None
+            return CapabilityOutput(
+                content=render_slice(table),
+                data={
+                    "mode": table.mode,
+                    "matched_rows": table.matched,
+                    "total_rows": table.total,
+                    "returned_rows": len(table.rows),
+                },
+                metadata={"domain": "sampling"},
+            )
         page: RetrievedPage | None = store.get(
             result_id, offset=offset, limit=limit, query=query if isinstance(query, str) else None
         )
@@ -180,7 +212,10 @@ def register_sampling_capabilities(
     )
     retrieve_spec = CapabilitySpec(
         name="retrieve_result",
-        description="按行分页回取被压缩前的原始工具结果(支持 query 过滤)。",
+        description=(
+            "按行分页回取被压缩前的原始工具结果(支持 query 过滤);"
+            "或结构化切片:mode=head|tail|sample + columns 投影 + 单谓词 filter。"
+        ),
         input_schema={
             "type": "object",
             "properties": {
@@ -188,6 +223,9 @@ def register_sampling_capabilities(
                 "offset": {"type": "integer", "minimum": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 500},
                 "query": {"type": "string"},
+                "mode": {"type": "string", "enum": ["page", "head", "tail", "sample"]},
+                "columns": {"type": "array", "items": {"type": "string"}},
+                "filter": {"type": "string", "description": "col op value (op: > >= < <= == !=)"},
             },
             "required": ["result_id"],
         },
