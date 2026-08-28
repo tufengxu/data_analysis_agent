@@ -206,7 +206,7 @@ async def test_tool_double_failure_downgrades_to_stateless(tmp_path, monkeypatch
 
 
 async def test_list_dataframes_reports_kernel_variables(kernel):
-    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pandas")
     res = await kernel.execute(
         "import pandas as pd\ndf_orders = pd.DataFrame({'a': range(60)})\nsmall = pd.Series(range(3))",
         timeout=15,
