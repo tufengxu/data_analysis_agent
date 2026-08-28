@@ -13,14 +13,29 @@ from typing import Any
 _CELL_WIDTH = 40
 
 
-def render_summary_dict(summary: dict[str, Any], *, stats_exact: bool = True) -> str:
-    """Render a :class:`TableSummary`-shaped dict to Markdown."""
+def render_summary_dict(
+    summary: dict[str, Any],
+    *,
+    stats_exact: bool = True,
+    variable: str | None = None,
+) -> str:
+    """Render a :class:`TableSummary`-shaped dict to Markdown.
+
+    ``variable`` names the kernel variable the table came from (P1-1
+    provenance); omitted for anonymous results — output stays identical to
+    the pre-variable era.
+    """
     n_rows = int(summary.get("n_rows", 0))
     n_cols = int(summary.get("n_cols", 0))
     method = summary.get("sampling_method", "")
     fidelity = summary.get("fidelity_level", "")
 
-    lines: list[str] = ["### 数据采样摘要 (sampled view)"]
+    title = (
+        f"### {variable} · 数据采样摘要 (sampled view)"
+        if variable
+        else "### 数据采样摘要 (sampled view)"
+    )
+    lines: list[str] = [title]
     lines.append(f"- rows={n_rows:,} · cols={n_cols} · method={method} · fidelity={fidelity}")
 
     columns = summary.get("columns", [])

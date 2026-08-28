@@ -578,14 +578,13 @@ class PythonAnalysisTool(Tool):
         if images:
             metadata["images"] = images
 
-        table_summaries = [
-            item["summary"]
-            for item in outputs
-            if item.get("type") == "table_summary" and "summary" in item
+        table_summary_items = [
+            item for item in outputs if item.get("type") == "table_summary" and "summary" in item
         ]
-        if table_summaries:
+        if table_summary_items:
             rendered = "\n\n".join(
-                render.render_summary_dict(summary) for summary in table_summaries
+                render.render_summary_dict(item["summary"], variable=item.get("variable"))
+                for item in table_summary_items
             )
             content = (
                 f"{clean_stdout}\n\n{rendered}"

@@ -226,3 +226,62 @@ async def test_list_dataframes_reports_kernel_variables(kernel):
 async def test_list_dataframes_degrades_without_pandas(kernel):
     frames = await kernel.list_dataframes()
     assert isinstance(frames, list)  # probe error → [] (no raise)
+
+
+# --- P1-1 (4a): variable-level summaries with snapshot dedup -----------------
+
+
+def _table_items(res):
+    return [o for o in res.outputs if o.get("type") == "table_summary"]
+
+
+async def test_kernel_variable_summaries_with_snapshot_dedup(kernel):
+    pytest.importorskip("pandas")
+    first = await kernel.execute(
+        "import pandas as pd\n"
+        "df_orders = pd.DataFrame({'g': ['a'] * 60, 'v': list(range(60))})\n"
+        "df_small = pd.Series(range(3))",
+        timeout=15,
+    )
+    assert first.error is None
+    items = _table_items(first)
+    assert len(items) == 1  # small frame is mapped in the snapshot, not summarized
+    assert items[0]["variable"] == "df_orders"
+
+    # unchanged frames -> no re-summary on the next request
+    second = await kernel.execute("x = 1", timeout=15)
+    assert second.error is None
+    assert _table_items(second) == []
+
+    # shape change (new column) -> re-summarized
+    third = await kernel.execute("df_orders['w'] = 1", timeout=15)
+    assert third.error is None
+    items3 = _table_items(third)
+    assert len(items3) == 1 and items3[0]["variable"] == "df_orders"
+
+
+async def test_kernel_variable_summaries_cap_three_largest(kernel):
+    pytest.importorskip("pandas")
+    res = await kernel.execute(
+        "import pandas as pd\n"
+        "a = pd.DataFrame({'v': range(200)})\n"
+        "b = pd.DataFrame({'v': range(150)})\n"
+        "c = pd.DataFrame({'v': range(120)})\n"
+        "d = pd.DataFrame({'v': range(100)})",
+        timeout=15,
+    )
+    assert res.error is None
+    assert [i["variable"] for i in _table_items(res)] == ["a", "b", "c"]
+
+    # the capped-out frame is picked up on the next request
+    res2 = await kernel.execute("pass", timeout=15)
+    assert [i["variable"] for i in _table_items(res2)] == ["d"]
+
+
+async def test_kernel_result_path_carries_variable(kernel):
+    pytest.importorskip("pandas")
+    res = await kernel.execute(
+        "import pandas as pd\nresult = pd.DataFrame({'v': range(60)})", timeout=15
+    )
+    items = _table_items(res)
+    assert items and items[0]["variable"] == "result"
