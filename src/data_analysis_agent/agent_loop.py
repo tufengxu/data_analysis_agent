@@ -26,7 +26,11 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import ArtifactStore
-from .capabilities.sampling.compactor import CompactRequest, DefaultToolResultCompactor
+from .capabilities.sampling.compactor import (
+    CompactionStats,
+    CompactRequest,
+    DefaultToolResultCompactor,
+)
 from .context.compression import ContextCompressor, estimate_tokens, message_to_text
 from .events import (
     AgentEvent,
@@ -192,13 +196,14 @@ class AgentLoop:
         memory_injector: Callable[[str], str] | None = None,
         memory_recorder: Callable[[str, dict[str, Any], dict[str, Any]], None] | None = None,
         data_state_provider: Callable[[], Awaitable[str | None]] | None = None,
+        compaction_stats: CompactionStats | None = None,
     ):
         self.config = config
         self.registry = registry
         self.compressor = compressor or ContextCompressor()
         self.sampling_config = sampling_config or SamplingConfig()
         self.result_store = result_store
-        self._compactor = DefaultToolResultCompactor(result_store)
+        self._compactor = DefaultToolResultCompactor(result_store, stats=compaction_stats)
         self.store = store
         self.skill_registry = skill_registry
         self.permission_engine = permission_engine

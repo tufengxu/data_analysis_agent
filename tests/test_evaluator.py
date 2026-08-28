@@ -338,3 +338,59 @@ def test_approve_and_retire_lifecycle(tmp_path):
     assert retire_skill(skills_dir, "s1") == 0  # already retired -> idempotent 0
     assert load_skills(skills_dir, statuses=("retired",))[0].name == "s1"
     assert load_skills(skills_dir, statuses=("active",)) == []
+
+
+# --- P2-1 (context-compression-upgrade): sampling-arm comparison ------------
+
+
+def _arm_run(passed: bool, compacted: int = 0, before: int = 0, after: int = 0):
+    def run(task, skill):
+        from data_analysis_agent.evolution.evaluator import EvalRun
+
+        return EvalRun(
+            tool_call_count=2,
+            has_error=not passed,
+            final_text="42" if passed else "wrong",
+            computed_outputs=("128700",) if passed else (),
+            compacted_count=compacted,
+            chars_before=before,
+            chars_after=after,
+        )
+
+    return run
+
+
+def test_compare_sampling_arms_reports_ratio_and_drop():
+    from data_analysis_agent.evolution.evaluator import compare_sampling_arms
+
+    tasks = [
+        EvalTask(task_id=f"t{i}", input="q", assertions={"numeric_anchor": {"value": 128700}})
+        for i in range(4)
+    ]
+    report = compare_sampling_arms(
+        {
+            "control": _arm_run(True),
+            "default": _arm_run(True, compacted=2, before=10_000, after=1_000),
+            "low": _arm_run(False, compacted=3, before=10_000, after=300),
+        },
+        tasks,
+    )
+    assert report["control"]["pass_rate"] == 1.0
+    assert report["default"]["compression_ratio"] == 0.1
+    assert report["default"]["pass_rate_drop_vs_control"] == 0.0
+    assert "guidance" not in report["default"]
+    # low arm lost all signal: drop 1.0 > 0.035 → guidance raised
+    assert report["low"]["pass_rate_drop_vs_control"] == 1.0
+    assert "升 fidelity" in report["low"]["guidance"]
+    assert report["low"]["failures"]
+
+
+def test_sampling_arm_control_transform_disables_compaction():
+    from data_analysis_agent.config import AgentConfig
+    from data_analysis_agent.evolution.evaluator import SAMPLING_ARM_TRANSFORMS
+
+    control = SAMPLING_ARM_TRANSFORMS["control"](AgentConfig())
+    assert control.sampling_trigger_chars >= 10**9
+    assert control.sampling_adaptive_fidelity is False
+    low = SAMPLING_ARM_TRANSFORMS["low"](AgentConfig())
+    assert low.sampling_fidelity == "low"

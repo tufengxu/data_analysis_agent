@@ -83,6 +83,24 @@ def data_state_block(
     return "\n".join(lines)
 
 
+@dataclass
+class CompactionStats:
+    """Mutable compaction counters (D8): eval sampling arms + observability.
+
+    Attached by the composition root (runtime / serving); every compact()
+    call bumps exactly one of the counters. ``ratio`` is the aggregate
+    compressed/original char ratio over compacted results only.
+    """
+
+    compacted_count: int = 0
+    passthrough_count: int = 0
+    chars_before: int = 0
+    chars_after: int = 0
+
+    def ratio(self) -> float | None:
+        return self.chars_after / self.chars_before if self.chars_before else None
+
+
 @dataclass(frozen=True)
 class CompactRequest:
     """One compaction ask from any harness's tool-result outlet."""
@@ -134,8 +152,11 @@ class DefaultToolResultCompactor:
     original content un-compacted (never worse than doing nothing).
     """
 
-    def __init__(self, store: ResultStore | None = None) -> None:
+    def __init__(
+        self, store: ResultStore | None = None, stats: CompactionStats | None = None
+    ) -> None:
         self._store = store
+        self._stats = stats
 
     # D8: pressure at/above this downgrades fidelity to low (adaptive_fidelity
     # pins the configured level when False).
@@ -179,12 +200,14 @@ class DefaultToolResultCompactor:
                 notes=("compactor-internal-error:原样返回",),
             )
         if not was_compacted:
-            return CompactResult(
+            result = CompactResult(
                 content=out,
                 was_compacted=False,
                 sampling_method="passthrough",
                 fidelity_level=config.fidelity_level,
             )
+            self._note(request, result)
+            return result
 
         result_id: str | None = None
         content = out
@@ -196,10 +219,22 @@ class DefaultToolResultCompactor:
                 result_id = request.result_id
                 content = out + "\n\n" + recall_hint(result_id)
 
-        return CompactResult(
+        result = CompactResult(
             content=content,
             was_compacted=True,
             result_id=result_id,
             sampling_method=_classify_method(request.content, out),
             fidelity_level=config.fidelity_level,
         )
+        self._note(request, result)
+        return result
+
+    def _note(self, request: CompactRequest, result: CompactResult) -> None:
+        if self._stats is None:
+            return
+        if result.was_compacted:
+            self._stats.compacted_count += 1
+            self._stats.chars_before += len(request.content)
+            self._stats.chars_after += len(result.content)
+        else:
+            self._stats.passthrough_count += 1

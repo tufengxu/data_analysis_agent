@@ -19,7 +19,7 @@ import os
 import re
 import statistics
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +88,11 @@ class EvalRun:
     # Wave 8: concatenated python_analysis result contents (each capped). Raw
     # capture only — only consulted when an assertion opts in via numeric_anchor.
     computed_outputs: tuple[str, ...] = ()
+    # P2-1 (context-compression-upgrade): compaction counters for the run —
+    # the sampling-arm comparison reports pass-rate vs compression ratio.
+    compacted_count: int = 0
+    chars_before: int = 0
+    chars_after: int = 0
 
 
 @dataclass
@@ -394,8 +399,6 @@ def eval_config_for(base: Any) -> Any:
     visualization/html_report and make every eval task fail. `deny_patterns=[]`
     is a fresh list, so it never shares identity with the base config.
     """
-    from dataclasses import replace
-
     return replace(
         base,
         permission_mode="default",
@@ -499,6 +502,9 @@ def make_agent_run_fn(client: Any, *, allowed_paths: list[str | Path], config: A
                     tuple(artifact_paths),
                     tuple(artifact_sections),
                     tuple(computed_outputs),
+                    compacted_count=runtime.compaction_stats.compacted_count,
+                    chars_before=runtime.compaction_stats.chars_before,
+                    chars_after=runtime.compaction_stats.chars_after,
                 )
             finally:
                 await runtime.shutdown()  # release the per-task runtime (kernel, etc.)
@@ -565,6 +571,142 @@ def _cmd_evaluate(args: Any) -> int:
         elif verdict["decision"] == "needs_review":
             print("  样本不足,降级为人审清单(保持 candidate)。")
     return 0
+
+
+# --- P2-1 (context-compression-upgrade): sampling-arm comparison ------------
+
+# Arm name -> config transform. ``control`` disables compaction entirely
+# (trigger beyond any real result); ``low`` pins the low fidelity preset.
+SAMPLING_ARM_TRANSFORMS: dict[str, Callable[[Any], Any]] = {
+    "control": lambda cfg: replace(
+        cfg, sampling_trigger_chars=10**9, sampling_adaptive_fidelity=False
+    ),
+    "default": lambda cfg: cfg,
+    "low": lambda cfg: replace(cfg, sampling_fidelity="low"),
+}
+
+# Research doc threshold: a pass-rate drop beyond ~3-5% vs control means the
+# compaction is losing signal — raise fidelity or the trigger instead.
+_PASS_RATE_ALERT_DROP = 0.035
+
+
+def compare_sampling_arms(
+    run_fns: dict[str, RunFn],
+    tasks: list[EvalTask],
+) -> dict[str, dict[str, Any]]:
+    """Score the same tasks under several sampling arms (deterministic).
+
+    ``run_fns`` maps arm name -> run_fn (each already carrying its arm's
+    config). Pure aggregation over EvalRun + check_assertions — no LLM judge,
+    so the report is reproducible for fixed agent behavior.
+    """
+    report: dict[str, dict[str, Any]] = {}
+    for arm, run_fn in run_fns.items():
+        runs = [run_fn(task, None) for task in tasks]
+        scored = [
+            check_assertions(run, task.assertions) for run, task in zip(runs, tasks, strict=True)
+        ]
+        passed = sum(1 for ok, _ in scored if ok)
+        chars_before = sum(run.chars_before for run in runs)
+        chars_after = sum(run.chars_after for run in runs)
+        report[arm] = {
+            "tasks": len(tasks),
+            "passed": passed,
+            "pass_rate": passed / len(tasks) if tasks else 0.0,
+            "mean_tool_calls": (
+                statistics.mean(run.tool_call_count for run in runs) if runs else 0.0
+            ),
+            "compacted_count": sum(run.compacted_count for run in runs),
+            "compression_ratio": (round(chars_after / chars_before, 4) if chars_before else None),
+            "failures": [
+                f"{task.task_id}: {detail}"
+                for (ok, failures), task in zip(scored, tasks, strict=True)
+                if not ok
+                for detail in failures
+            ],
+        }
+    control = report.get("control")
+    for arm, metrics in report.items():
+        if arm == "control" or control is None:
+            continue
+        drop = control["pass_rate"] - metrics["pass_rate"]
+        metrics["pass_rate_drop_vs_control"] = round(drop, 4)
+        if drop > _PASS_RATE_ALERT_DROP:
+            metrics["guidance"] = "pass-rate 降幅 >3.5%:压缩正在丢信号,建议升 fidelity 档或触发阈值"
+    return report
+
+
+def _cmd_compare_sampling(args: Any) -> int:
+    from ..config import AgentConfig
+    from ..protocol.client import AnthropicApiClient
+
+    config = AgentConfig.from_env()
+    if not config.api_key:
+        print("ANTHROPIC_API_KEY not set; the comparison reruns the agent.")
+        return 1
+    tasks_dir = Path(args.tasks_dir)
+    tasks = [
+        task
+        for task in load_eval_tasks(tasks_dir)
+        # numeric anchors only: the arm comparison lives and dies by deterministic scoring
+        if task.assertions.get("numeric_anchor")
+    ]
+    if not tasks:
+        print(f"{tasks_dir} 下没有带 numeric_anchor 的任务。")
+        return 1
+    arms = [a.strip() for a in str(args.arms).split(",") if a.strip()]
+    unknown = [a for a in arms if a not in SAMPLING_ARM_TRANSFORMS]
+    if unknown:
+        print(f"未知采样臂: {unknown};可选 {sorted(SAMPLING_ARM_TRANSFORMS)}")
+        return 1
+
+    base = eval_config_for(config)
+    client = AnthropicApiClient(api_key=config.api_key, model=config.model)
+    run_fns = {
+        arm: make_agent_run_fn(
+            client, allowed_paths=[tasks_dir], config=SAMPLING_ARM_TRANSFORMS[arm](base)
+        )
+        for arm in arms
+    }
+    report = compare_sampling_arms(run_fns, tasks)
+    for arm, metrics in report.items():
+        print(
+            f"[{arm}] pass {metrics['passed']}/{metrics['tasks']}"
+            f" · pass_rate={metrics['pass_rate']:.3f}"
+            f" · compacted={metrics['compacted_count']}"
+            f" · ratio={metrics['compression_ratio']}"
+            f" · mean_tools={metrics['mean_tool_calls']:.1f}"
+        )
+        if metrics.get("pass_rate_drop_vs_control") is not None:
+            print(
+                f"        drop_vs_control={metrics['pass_rate_drop_vs_control']}"
+                f"{' · ' + metrics['guidance'] if metrics.get('guidance') else ''}"
+            )
+        for failure in metrics["failures"][:5]:
+            print(f"        FAIL {failure}")
+    return 0
+
+
+def register_compare_sampling_cli(subparsers: Any) -> None:
+    """Register the ``compare-sampling`` subcommand (P2-1 eval loop)."""
+    p = subparsers.add_parser(
+        "compare-sampling",
+        help="同一任务集在不同采样臂(control=不压缩/default/low)下对比 pass-rate 与压缩比",
+    )
+    p.add_argument(
+        "--tasks-dir",
+        default=str(
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "examples"
+            / "eval_tasks"
+            / "context_fidelity"
+        ),
+        help="任务目录(只取带 numeric_anchor 的任务)",
+    )
+    p.add_argument(
+        "--arms", default="control,default,low", help="逗号分隔,可选 control/default/low"
+    )
+    p.set_defaults(func=_cmd_compare_sampling)
 
 
 def _utc_now_iso() -> str:
@@ -721,7 +863,10 @@ __all__ = [
     "check_assertions",
     "decide_promotion",
     "load_eval_tasks",
+    "compare_sampling_arms",
     "make_agent_run_fn",
+    "register_compare_sampling_cli",
+    "SAMPLING_ARM_TRANSFORMS",
     "register_evaluate_cli",
     "relevant_tasks",
 ]

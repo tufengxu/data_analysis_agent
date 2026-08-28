@@ -60,11 +60,11 @@
 
 ## P9 — PR-8:评测闭环 + 格式臂(P2-1+P2-3)
 
-- [ ] 9.1 compactor stats 累积器 + runtime 注入
-- [ ] 9.2 evaluator 采样臂 + EvalRun 扩字段 + 两臂报告
-- [ ] 9.3 examples/eval_tasks/context_fidelity/ ≥8 任务(numeric_anchor)
-- [ ] 9.4 render_format=kv 开关(默认 markdown 不变)
-- [ ] 9.5 eval_gate 结构门通过;demo_e2e 11 步 PASS
+- [x] 9.1 CompactionStats(compacted/passthrough/前后字符 + ratio)+ runtime 注入并暴露(TestCompactionStats ×2)
+- [x] 9.2 compare_sampling_arms(control/default/low)+ EvalRun 扩字段 + register_compare_sampling_cli(降幅>3.5% 给升档指引)(test_compare_sampling_arms_reports_ratio_and_drop、test_sampling_arm_control_transform_disables_compaction)
+- [x] 9.3 context_fidelity/ 8 任务 + fixtures/sales_large.csv(1200 行,锚点脚本计算;修正了空组合任务)
+- [x] 9.4 SamplingConfig.render_format=markdown|kv(默认不变,仅样本行段)(test_render_kv_format_arm;text_summary/python_exec/serving 白名单接线)
+- [x] 9.5 eval_gate PASS;quality_gate 七步绿(demo_e2e 在收尾 PR 复验)
 
 ## P10 — 收尾
 

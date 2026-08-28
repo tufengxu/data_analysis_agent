@@ -1,0 +1,18 @@
+{
+  "task_id": "fidelity_online_rows",
+  "input": "这是一份零售流水数据(1,200 行)。先用 print(df) 通读全量数据,再统计 channel=='线上' 的行数并报告。",
+  "dataset_fixture": "fixtures/sales_large.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 12,
+    "required_tools": [
+      "python_analysis"
+    ],
+    "numeric_anchor": {
+      "value": 400,
+      "tolerance": 0.0,
+      "label": "线上行数"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "task_id": "fidelity_month1_online_sum",
+  "input": "这是一份零售流水数据(1,200 行)。先用 print(df) 通读全量数据,再计算 month==1 且 channel=='线上' 的 sales 总和,报告这个数。",
+  "dataset_fixture": "fixtures/sales_large.csv",
+  "assertions": {
+    "no_error_results": true,
+    "min_tool_calls": 1,
+    "tool_call_count_max": 12,
+    "required_tools": [
+      "python_analysis"
+    ],
+    "numeric_anchor": {
+      "value": 53200,
+      "tolerance": 0.0,
+      "label": "1月线上 sales 总和"
+    }
+  }
+}

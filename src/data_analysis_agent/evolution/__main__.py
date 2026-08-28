@@ -193,6 +193,14 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError:
         pass
 
+    # 'compare-sampling' is registered by the evaluator (P2-1 sampling arms).
+    try:
+        from .evaluator import register_compare_sampling_cli
+
+        register_compare_sampling_cli(sub)
+    except ImportError:
+        pass
+
     # 'harvest-eval' is registered by the eval_harvester if available.
     try:
         from .eval_harvester import register_harvest_eval_cli

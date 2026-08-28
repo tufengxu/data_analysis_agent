@@ -14,6 +14,7 @@ pure re-export shim; public API and behavior unchanged). The
 from __future__ import annotations
 
 from .compactor import (
+    CompactionStats,
     CompactRequest,
     CompactResult,
     DefaultToolResultCompactor,
@@ -32,6 +33,7 @@ from .text_summary import compact_result, summarize_text
 __all__ = [
     "CompactRequest",
     "CompactResult",
+    "CompactionStats",
     "DefaultToolResultCompactor",
     "FIDELITY_LEVELS",
     "ColumnSummary",

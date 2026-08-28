@@ -73,6 +73,7 @@ def _sampling_config_from(input_data: dict[str, Any]) -> SamplingConfig:
                 "trigger_pressure_scale",
                 "trigger_floor_chars",
                 "adaptive_fidelity",
+                "render_format",
                 "max_sample_rows",
                 "top_k",
                 "quantiles",

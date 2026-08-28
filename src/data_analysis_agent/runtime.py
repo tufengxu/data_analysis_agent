@@ -11,13 +11,13 @@ lighter agent than production" drift.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from .agent_loop import AgentLoop, AgentLoopConfig, ApprovalHandler
 from .artifacts import ArtifactStore
-from .capabilities.sampling.compactor import data_state_block
+from .capabilities.sampling.compactor import CompactionStats, data_state_block
 from .config import AgentConfig
 from .context.compression import ContextCompressor
 from .kernel import KernelManager
@@ -284,6 +284,7 @@ class AgentRuntime:
     loop: AgentLoop
     kernel: KernelManager | None
     artifacts_dir: Path
+    compaction_stats: CompactionStats = field(default_factory=CompactionStats)
     memory_injector: MemoryInjector | None = None
     project: Project | None = None
     run_id: str | None = None
@@ -369,6 +370,7 @@ class AgentRuntime:
             artifact_dir=artifacts_dir,
             analysis_paths=analysis_paths,
         )
+        compaction_stats = CompactionStats()
         compressor = ContextCompressor(
             budget_tokens=config.context_budget_tokens,
             enable_snip=True,
@@ -394,6 +396,7 @@ class AgentRuntime:
             memory_injector=memory_injector,
             memory_recorder=memory_recorder,
             data_state_provider=_build_data_state_provider(kernel, result_store),
+            compaction_stats=compaction_stats,
         )
 
         if store is not None and len(store) > 0:
@@ -414,6 +417,7 @@ class AgentRuntime:
             loop=loop,
             kernel=kernel,
             artifacts_dir=artifacts_dir,
+            compaction_stats=compaction_stats,
             memory_injector=injector,
             project=project,
             run_id=run_id,
