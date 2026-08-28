@@ -191,6 +191,7 @@ class AgentLoop:
         artifact_store: ArtifactStore | None = None,
         memory_injector: Callable[[str], str] | None = None,
         memory_recorder: Callable[[str, dict[str, Any], dict[str, Any]], None] | None = None,
+        data_state_provider: Callable[[], Awaitable[str | None]] | None = None,
     ):
         self.config = config
         self.registry = registry
@@ -221,7 +222,12 @@ class AgentLoop:
         )
         # Recovery decisions (error/truncation escalation ladder) live in their
         # own testable policy; it shares the loop's compressor + client instances.
-        self.recovery_policy = RecoveryPolicy(self.compressor, self.client, config.max_tokens)
+        self.recovery_policy = RecoveryPolicy(
+            self.compressor,
+            self.client,
+            config.max_tokens,
+            data_state_provider=data_state_provider,
+        )
 
     async def run(
         self,

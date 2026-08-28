@@ -71,8 +71,10 @@ class _FakeClient:
         return _Resp([TextBlock(text=self._text or "")])
 
 
-def _policy(compressor, client=None, max_tokens=8192, sleep=None):
+def _policy(compressor, client=None, max_tokens=8192, sleep=None, data_state_provider=None):
     kw = {} if sleep is None else {"sleep": sleep}
+    if data_state_provider is not None:
+        kw["data_state_provider"] = data_state_provider
     return RecoveryPolicy(compressor, client or _FakeClient(), max_tokens, **kw)
 
 
@@ -218,3 +220,70 @@ async def test_summarize_returns_model_text():
     dropped = [Message(role="user", content="read schema of sales.csv")]
     policy = _policy(_FakeCompressor(removed=dropped), _FakeClient(text="schema: id,amount"))
     assert await policy._summarize_for_compact(dropped) == "schema: id,amount"
+
+
+# --- D4: compaction preserves the data state --------------------------------
+
+
+class _RecordingClient(_FakeClient):
+    """Captures the summarizer prompt for template/digest assertions."""
+
+    def __init__(self, text="ok"):
+        super().__init__(text=text)
+        self.prompt = ""
+
+    async def call_model(self, messages, max_tokens):
+        self.called = True
+        self.prompt = messages[0]["content"]
+        return _Resp([TextBlock(text=self._text)])
+
+
+async def _provider(text="kernel 数据变量:\n- orders: 1,200 行 × 5 列"):
+    return text
+
+
+async def test_reactive_compact_reinjects_data_state():
+    compressor = _FakeCompressor(staged=(), removed=[Message(role="user", content="old span")])
+    policy = _policy(compressor, _RecordingClient(), data_state_provider=_provider)
+    out = await policy.attempt_recovery(_state(), AnthropicClientError("prompt is too long"))
+    assert out is not None
+    reinjected = [
+        m for m in out.messages if m.is_meta and "数据状态(压缩后重注入)" in str(m.content)
+    ]
+    assert reinjected and "orders: 1,200 行 × 5 列" in reinjected[0].content
+    # handoff prompt carries the runtime data-state section
+    assert "运行时数据态" in policy.client.prompt
+    assert "任务目标与硬约束" in policy.client.prompt and "可回取 result_id" in policy.client.prompt
+
+
+async def test_reactive_compact_without_provider_omits_reinjection():
+    compressor = _FakeCompressor(staged=(), removed=[Message(role="user", content="old span")])
+    policy = _policy(compressor, _RecordingClient())
+    out = await policy.attempt_recovery(_state(), AnthropicClientError("prompt is too long"))
+    assert out is not None
+    assert not [m for m in out.messages if "数据状态(压缩后重注入)" in str(m.content)]
+    assert "[运行时数据态" not in policy.client.prompt
+
+
+async def test_provider_failure_degrades_silently():
+    async def broken():
+        raise RuntimeError("kernel down")
+
+    compressor = _FakeCompressor(staged=(), removed=[Message(role="user", content="old span")])
+    policy = _policy(compressor, _RecordingClient(), data_state_provider=broken)
+    out = await policy.attempt_recovery(_state(), AnthropicClientError("prompt is too long"))
+    assert out is not None
+    assert compressor.forced  # compaction itself succeeded
+    assert not [m for m in out.messages if "数据状态(压缩后重注入)" in str(m.content)]
+
+
+async def test_summarize_digest_keeps_head_and_tail():
+    from data_analysis_agent.recovery import _head_tail
+
+    text = ("HEAD_MARKER" + "h" * 100 + "\n") + "m" * 40_000 + ("\ntail" + "TAIL_MARKER")
+    out = _head_tail(text, 24_000)
+    assert out.startswith("HEAD_MARKER")
+    assert out.endswith("TAIL_MARKER")
+    assert "中段省略" in out
+    short = "small digest"
+    assert _head_tail(short, 24_000) == short

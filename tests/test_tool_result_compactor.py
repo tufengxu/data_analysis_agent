@@ -11,6 +11,7 @@ from data_analysis_agent.capabilities.sampling import (
     DefaultToolResultCompactor,
     SamplingConfig,
     collapse_digest,
+    data_state_block,
     recall_hint,
 )
 from data_analysis_agent.capabilities.sampling.result_store import ResultStore
@@ -144,6 +145,22 @@ class TestV1Equivalence:
         compactor = DefaultToolResultCompactor()
         result = compactor.compact(CompactRequest(content="x" * 10, max_chars=1))
         assert isinstance(result.content, str)
+
+
+class TestDataStateBlock:
+    """D4:kernel 变量 + 存活回取 id → 紧凑数据态块(压缩后重注入用)。"""
+
+    def test_frames_and_results(self) -> None:
+        block = data_state_block(
+            frames=[{"name": "orders", "rows": 12_000, "cols": 8}],
+            results=[{"id": "toolu_1", "tool": "python_analysis", "bytes": 45_000}],
+        )
+        assert "orders: 12,000 行 × 8 列" in block
+        assert "toolu_1" in block and "python_analysis" in block and "43KB" in block
+
+    def test_empty_inputs_yield_empty_block(self) -> None:
+        assert data_state_block() == ""
+        assert data_state_block(frames=[], results=[]) == ""
 
 
 class TestCollapseDigest:

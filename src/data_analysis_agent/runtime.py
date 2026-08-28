@@ -10,13 +10,14 @@ lighter agent than production" drift.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from .agent_loop import AgentLoop, AgentLoopConfig, ApprovalHandler
 from .artifacts import ArtifactStore
+from .capabilities.sampling.compactor import data_state_block
 from .config import AgentConfig
 from .context.compression import ContextCompressor
 from .kernel import KernelManager
@@ -147,6 +148,27 @@ def build_registry(
             registry.add_deny_pattern("chart_render")
 
     return registry
+
+
+def _build_data_state_provider(
+    kernel: KernelManager | None,
+    result_store: Any,
+) -> Callable[[], Awaitable[str | None]] | None:
+    """D4: kernel 变量清单 + 存活回取 id → 数据态文本块。
+
+    供 reactive compaction 的 handoff 模板与压缩后重注入使用;任何一侧
+    失败/缺失只产出更小的块,不影响压缩流程。两输入皆无 → None(策略
+    降级为无数据态分节)。
+    """
+    if kernel is None and result_store is None:
+        return None
+
+    async def provider() -> str | None:
+        frames = await kernel.list_dataframes() if kernel is not None else None
+        results = result_store.alive_ids() if result_store is not None else None
+        return data_state_block(frames, results) or None
+
+    return provider
 
 
 def build_skill_registry(
@@ -371,6 +393,7 @@ class AgentRuntime:
             artifact_store=ArtifactStore(artifacts_dir),
             memory_injector=memory_injector,
             memory_recorder=memory_recorder,
+            data_state_provider=_build_data_state_provider(kernel, result_store),
         )
 
         if store is not None and len(store) > 0:

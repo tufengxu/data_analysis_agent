@@ -194,6 +194,44 @@ class KernelManager:
             await self._kill_locked()
             await self._start_locked()
 
+    # Harness-injected introspection probe (D4/P0-4): NOT user code, so it
+    # bypasses the AST gate by design — it only reads globals() and reports
+    # shapes; it never touches files or the network.
+    _PROBE_CODE = (
+        "import pandas as _daa_pd\n"
+        "_daa_frames = []\n"
+        "for _daa_n, _daa_v in list(globals().items()):\n"
+        "    if _daa_n.startswith('_') or _daa_n in ('agent_result', 'agent_summarize'):\n"
+        "        continue\n"
+        "    if isinstance(_daa_v, (_daa_pd.DataFrame, _daa_pd.Series)):\n"
+        "        _daa_frames.append({'name': _daa_n, 'rows': int(_daa_v.shape[0]),\n"
+        "                            'cols': int(_daa_v.shape[1]) if _daa_v.ndim > 1 else 1})\n"
+        "_daa_frames.sort(key=lambda f: -f['rows'])\n"
+        "agent_result([{'type': 'data_frames', 'frames': _daa_frames[:20]}])\n"
+    )
+
+    async def list_dataframes(self, timeout: float = 10.0) -> list[dict[str, Any]]:
+        """Top-level DataFrame/Series variables as name/rows/cols dicts.
+
+        Feeds the compaction data-state provider. Returns [] on any failure
+        (kernel down, pandas absent, probe error) — "no data state" is a
+        degradation, never an error, for the compaction path.
+        """
+        if not self.alive:
+            return []
+        try:
+            result = await self.execute(self._PROBE_CODE, timeout)
+        except (KernelTimeoutError, KernelCrashError, KernelStartError):
+            return []
+        if result.error is not None:
+            return []
+        for item in result.outputs:
+            if item.get("type") == "data_frames":
+                frames = item.get("frames")
+                if isinstance(frames, list):
+                    return [f for f in frames if isinstance(f, dict)]
+        return []
+
     async def shutdown(self) -> None:
         """Kill the subprocess. The work_dir is kept: artifacts live there."""
         async with self._lock:

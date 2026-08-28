@@ -202,6 +202,32 @@ class ResultStore:
         age = self._clock() - float(rec.get("created_at", 0))
         return age <= self.ttl_seconds
 
+    def alive_ids(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Unexpired entries, newest first: id/tool/bytes (data-state feed).
+
+        Read-only (no eviction), safe to call from compaction paths. Feeds
+        :func:`compactor.data_state_block` so the model learns what is still
+        re-fetchable after a compaction.
+        """
+        if not self._available:
+            return []
+        self._refresh_if_needed()
+        now = self._clock()
+        alive = [
+            rec
+            for rec in self._index.values()
+            if now - rec.get("created_at", 0) <= self.ttl_seconds
+        ]
+        alive.sort(key=lambda rec: rec.get("created_at", 0), reverse=True)
+        return [
+            {
+                "id": str(rec.get("id", "")),
+                "tool": str(rec.get("tool", "")),
+                "bytes": int(rec.get("bytes", 0)),
+            }
+            for rec in alive[: max(1, limit)]
+        ]
+
     def get(
         self,
         result_id: str,

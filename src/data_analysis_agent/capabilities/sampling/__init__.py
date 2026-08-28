@@ -19,6 +19,7 @@ from .compactor import (
     DefaultToolResultCompactor,
     ToolResultCompactor,
     collapse_digest,
+    data_state_block,
     recall_hint,
 )
 from .config import FIDELITY_LEVELS, SamplingConfig
@@ -40,6 +41,7 @@ __all__ = [
     "ToolResultCompactor",
     "collapse_digest",
     "compact_result",
+    "data_state_block",
     "recall_hint",
     "render_summary_dict",
     "render_text_digest",
