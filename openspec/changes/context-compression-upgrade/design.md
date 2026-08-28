@@ -80,4 +80,14 @@ text_summary 增 JSON 检测(整体 json.loads 或逐行 JSONL)→ 骨架:键路
 
 ## 5. 验收清单核验记录
 
-(随 PR 落地逐项填写:PR 编号 + 证据[测试名/命令输出]。)
+- D1 数值呈现/统计补强 → PR #56:test_render_new_stat_fields_and_number_format 等 7 测;pytest 全绿。
+- D2 触发自适应/页豁免 → PR #57:test_pressure_scaled_trigger_compacts_earlier、test_recall_page_exempt_from_compaction。
+- D3 桩 digest → PR #57:TestCollapseDigest ×3 + test_collapse_stub_carries_digest_and_recall_handle(无标记回退保持)。
+- D0 适配器去镜像 → PR #57:check-ts + pi/dsh smoke PASS;DAA_COMPACT_FLOOR 新名旧名兼容测试。
+- D4 数据态 → PR #58:test_reactive_compact_reinjects_data_state 等 4 测;kernel/list_dataframes ×2。
+- D5(4a) 变量地图 → PR #59:test_kernel_variable_summaries_with_snapshot_dedup(去重/上限/补摘要)。
+- D6 下取 → PR #60:test_slicing.py ×6 + 工具 4 测 + serving roundtrip。
+- D7 JSON 摘要 → PR #61:test_json_digest.py ×5(含非法回退)。
+- D8 自适应降档 → PR #62:TestAdaptiveFidelity ×4(trigger 覆盖保留有专门测试)。
+- D8/D9 评测闭环 → PR #63:TestCompactionStats ×2、compare_sampling_arms ×2、kv 渲染;eval_gate PASS。
+- 全程:每 PR 七步闸绿;v1↔v2 逐字节等价、三传输一致性、recall_hint 字节、_PROD_TOOLS、demo_e2e 11 步均保持 PASS。

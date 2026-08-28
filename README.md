@@ -227,7 +227,7 @@ asyncio.run(main())
 | `visualization`                                                                                 | Generate matplotlib / seaborn / plotly charts                |
 | `chart_render`                                                                                  | Structured ChartSpec → ECharts option + JSON artifact        |
 | `html_report`                                                                                   | Render a self-contained H5 HTML report with ECharts charts   |
-| `retrieve_result`                                                                               | Page through the original of a summarized tool result        |
+| `retrieve_result`                                                                               | Page / slice the cached original (filter, projection, sample) |
 | `report_need` / `report_context` / `report_contract`                                            | Reporting pipeline (need → context → contract)               |
 | `causal_contract` / `causal_qa` / `experiment_readout` / `causal_action_plan` / `causal_report` | Causal decision pipeline (Stage 1)                           |
 

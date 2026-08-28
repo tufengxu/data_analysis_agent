@@ -197,6 +197,29 @@
 
 ---
 
+## 四点五、落地状态(2026-08-28,openspec change context-compression-upgrade)
+
+| 提案 | 状态 | PR |
+|---|---|---|
+| P0-1 数字呈现(千分位/3 位有效/防科学计数法) | ✅ 已落地 | #56 |
+| P0-2 L1 统计补强(cardinality/直方图/粒度/全列离群/identifier) | ✅ 已落地 | #56 |
+| P0-3 触发压力自适应 + 回取页豁免 + collapse 桩 digest | ✅ 已落地 | #57 |
+| P0-4 + P2-2 compaction 保数据态(handoff 模板/头尾摘要/重注入) | ✅ 已落地 | #58 |
+| P1-1(4a) kernel 变量地图(快照去重 + variable 溯源) | ✅ 已落地 | #59 |
+| P1-1(4b) 同 schema delta 渲染 | ⏸ 缓行(见下) | — |
+| P1-2 retrieve_result 查询下取(单谓词/投影/采样) | ✅ 已落地 | #60 |
+| P1-3 JSON/JSONL 结构骨架摘要 | ✅ 已落地 | #61 |
+| P1-4 fidelity 压力自适应(≥0.75 降档 low) | ✅ 已落地 | #62 |
+| P2-1 压缩-保真评测闭环(三臂 + CompactionStats + 8 任务) | ✅ 已落地 | #63 |
+| P2-3 render_format=kv A/B 臂 | ✅ 已落地 | #63 |
+| D0 解耦(适配器去触发镜像,用户追加的一等目标) | ✅ 已落地 | #57 |
+
+**4b 缓行理由**:delta 渲染的收益取决于真实会话中"同变量同 schema 重复摘要"的频率,
+4a 的 variable 溯源 + D4 数据态已消除大部分重复计税;应先用 compare-sampling 评测臂
+观测 4a 后的剩余重复量,再决定是否投入(避免为不确定收益引入渲染复杂度)。
+
+暂缓项维持不变:sketch 库(ADR 0001)、LLMLingua、embedding 语义采样。
+
 ## 五、Caveats
 
 - Chroma 为向量库厂商,Context Rot 有商业立场,但其 18 模型评测与 Liu et al. 学术结论互相印证;位置效应部分(Chroma 未观察到 vs Liu U 形)存在任务相关性张力,落地时以 Anthropic 官方建议(数据顶部/指令底部)为准并定期复测。
