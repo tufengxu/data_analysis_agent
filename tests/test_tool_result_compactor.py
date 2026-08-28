@@ -51,7 +51,8 @@ class TestContractShape:
                 content=content,
                 max_chars=50_000,
                 context_pressure=0.9,  # 宽松接受率:确保增益门放行(v1 语义)
-                config=SamplingConfig(fidelity_level="high"),
+                # adaptive_fidelity=False:显式锁档(D8)——否则 0.9 压力会降档 low
+                config=SamplingConfig(fidelity_level="high", adaptive_fidelity=False),
             )
         )
         assert result.was_compacted is True
@@ -80,6 +81,44 @@ class TestContractShape:
         )
         # 高压更宽松(接受率更高):宽松档被压缩的概率 >= 严格档
         assert lenient.was_compacted >= strict.was_compacted
+
+
+class TestAdaptiveFidelity:
+    """D8 前半:pressure ≥ 0.75 自动降档 low;adaptive_fidelity=False 锁档。"""
+
+    def test_high_pressure_downgrades_to_low(self) -> None:
+        result = DefaultToolResultCompactor().compact(
+            CompactRequest(content=_big_csv(1200), max_chars=50_000, context_pressure=0.9)
+        )
+        assert result.was_compacted is True
+        assert result.fidelity_level == "low"
+
+    def test_moderate_pressure_keeps_default_level(self) -> None:
+        result = DefaultToolResultCompactor().compact(
+            CompactRequest(content=_big_csv(1200), max_chars=50_000, context_pressure=0.5)
+        )
+        assert result.fidelity_level == "mid"
+
+    def test_explicit_off_pins_configured_level(self) -> None:
+        config = SamplingConfig(fidelity_level="high", adaptive_fidelity=False)
+        result = DefaultToolResultCompactor().compact(
+            CompactRequest(
+                content=_big_csv(1200), max_chars=50_000, context_pressure=0.95, config=config
+            )
+        )
+        assert result.fidelity_level == "high"
+
+    def test_downgrade_preserves_trigger_override(self) -> None:
+        # trigger_chars=2000 must survive the low-preset swap (else the 2.4k
+        # content would fall under the preset's 8000 trigger and not compact)
+        config = SamplingConfig(trigger_chars=2000)
+        content = _big_csv(140)
+        assert 2000 < len(content) <= 8000
+        result = DefaultToolResultCompactor().compact(
+            CompactRequest(content=content, max_chars=50_000, context_pressure=0.9, config=config)
+        )
+        assert result.was_compacted is True
+        assert result.fidelity_level == "low"
 
 
 class TestRecallHandle:

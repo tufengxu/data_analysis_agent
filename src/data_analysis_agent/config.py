@@ -80,6 +80,8 @@ class AgentConfig:
     # Result sampling / compaction
     sampling_trigger_chars: int = 8000
     sampling_fidelity: str = "mid"  # low | mid | high
+    # 高压(≥0.75)自动降档 low;False 锁定 sampling_fidelity
+    sampling_adaptive_fidelity: bool = True
 
     # Result store (CCR-lite)
     result_store_ttl_seconds: int = 3600
@@ -187,7 +189,11 @@ class AgentConfig:
         from .sampling import SamplingConfig
 
         base = SamplingConfig.for_fidelity(self.sampling_fidelity)
-        return replace(base, trigger_chars=self.sampling_trigger_chars)
+        return replace(
+            base,
+            trigger_chars=self.sampling_trigger_chars,
+            adaptive_fidelity=self.sampling_adaptive_fidelity,
+        )
 
     @classmethod
     def from_env(cls) -> AgentConfig:

@@ -15,7 +15,7 @@ The v1 ``agent_loop`` seam routes through this same implementation.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from .config import SamplingConfig
@@ -137,8 +137,30 @@ class DefaultToolResultCompactor:
     def __init__(self, store: ResultStore | None = None) -> None:
         self._store = store
 
-    def compact(self, request: CompactRequest) -> CompactResult:
+    # D8: pressure at/above this downgrades fidelity to low (adaptive_fidelity
+    # pins the configured level when False).
+    ADAPTIVE_PRESSURE_THRESHOLD = 0.75
+
+    def _effective_config(self, request: CompactRequest) -> SamplingConfig:
         config = request.config or SamplingConfig()
+        pressure = min(1.0, max(0.0, request.context_pressure))
+        if (
+            config.adaptive_fidelity
+            and pressure >= self.ADAPTIVE_PRESSURE_THRESHOLD
+            and config.fidelity_level != "low"
+        ):
+            low = SamplingConfig.for_fidelity("low")
+            return replace(
+                config,
+                fidelity_level="low",
+                max_sample_rows=low.max_sample_rows,
+                top_k=low.top_k,
+                quantiles=low.quantiles,
+            )
+        return config
+
+    def compact(self, request: CompactRequest) -> CompactResult:
+        config = self._effective_config(request)
         try:
             out, was_compacted = compact_result(
                 request.content,
