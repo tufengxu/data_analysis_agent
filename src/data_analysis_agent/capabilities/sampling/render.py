@@ -72,6 +72,38 @@ def render_summary_dict(
     return "\n".join(lines)
 
 
+def render_json_digest(digest: dict[str, Any]) -> str:
+    """Render a JSON structural digest (D7) to Markdown."""
+    n_items = int(digest.get("n_items", 0))
+    lines: list[str] = ["### JSON 结构摘要 (sampled view)"]
+    lines.append(f"- items={n_items:,}")
+
+    paths = digest.get("paths") or []
+    if paths:
+        lines += ["", "**键路径 (深度≤3):**", "", "| path | type | count |", "|---|---|---|"]
+        for entry in paths:
+            lines.append(
+                f"| {_cell(entry.get('path', ''))} | {entry.get('type', '')} | "
+                f"{_num(entry.get('count', 0))} |"
+            )
+
+    arrays = digest.get("arrays") or []
+    if arrays:
+        lines += ["", "**数组长度分布:**", ""]
+        for entry in arrays:
+            lines.append(
+                f"- {entry.get('path', '')}[]: min={entry.get('min')} "
+                f"中位={_num(entry.get('median', 0))} max={entry.get('max')}"
+            )
+
+    sampled = digest.get("sampled") or []
+    if sampled:
+        lines += ["", f"**代表元素 ({len(sampled)} of {n_items:,}):**", "```", *sampled, "```"]
+
+    lines += ["", f"> ⚠ 本视图为 {n_items:,} 个 JSON 对象的结构采样;完整内容已省略。"]
+    return "\n".join(lines)
+
+
 def render_text_digest(digest: dict[str, Any]) -> str:
     """Render a non-tabular text digest to Markdown."""
     n_lines = int(digest.get("n_lines", 0))
