@@ -133,3 +133,25 @@ def test_index_rewrite_no_tmp_left_after_success(tmp_path):
     assert not tmp.exists()
     lines = (tmp_path / "results" / "index.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2  # both records persisted
+
+
+def test_alive_ids_newest_first_and_expiry(tmp_path):
+    class _AdvancingClock:
+        def __init__(self):
+            self.t = 1000.0
+
+        def __call__(self):
+            return self.t
+
+    clock = _AdvancingClock()
+    store = ResultStore(tmp_path / "results", clock=clock)
+    assert store.put("a", "x" * 10, {"tool": "t1"}) is True
+    clock.t += 10.0
+    assert store.put("b", "y" * 20, {"tool": "t2"}) is True
+
+    alive = store.alive_ids()
+    assert [r["id"] for r in alive] == ["b", "a"]
+    assert alive[0]["tool"] == "t2" and alive[0]["bytes"] == 20
+
+    clock.t += 3610.0
+    assert store.alive_ids() == []

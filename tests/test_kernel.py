@@ -203,3 +203,26 @@ async def test_tool_double_failure_downgrades_to_stateless(tmp_path, monkeypatch
         assert "stateless ok" in ok.content
     finally:
         await manager.shutdown()
+
+
+async def test_list_dataframes_reports_kernel_variables(kernel):
+    pytest.importorskip("pandas")
+    res = await kernel.execute(
+        "import pandas as pd\ndf_orders = pd.DataFrame({'a': range(60)})\nsmall = pd.Series(range(3))",
+        timeout=15,
+    )
+    assert res.error is None
+
+    frames = await kernel.list_dataframes()
+    by_name = {f["name"]: f for f in frames}
+    assert by_name["df_orders"]["rows"] == 60
+    assert by_name["df_orders"]["cols"] == 1
+    assert by_name["small"]["rows"] == 3
+    # probe internals and harness helpers stay out of the map
+    assert all(not n.startswith("_") for n in by_name)
+    assert "agent_result" not in by_name and "pd" not in by_name
+
+
+async def test_list_dataframes_degrades_without_pandas(kernel):
+    frames = await kernel.list_dataframes()
+    assert isinstance(frames, list)  # probe error → [] (no raise)

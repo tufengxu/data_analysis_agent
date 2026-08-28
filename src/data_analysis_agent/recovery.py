@@ -32,6 +32,20 @@ from .state_machine import AgentState, ContinueReason, Message
 logger = logging.getLogger(__name__)
 
 
+def _head_tail(text: str, limit: int) -> str:
+    """Keep the head (early schema conclusions) AND tail (recent results).
+
+    Replaces the old tail-only slice, which silently cut off the beginning of
+    the dropped span — exactly where file schemas and dataset conclusions
+    live in a data-analysis session.
+    """
+    if len(text) <= limit:
+        return text
+    head = limit // 3
+    tail = limit - head
+    return text[:head] + "\n…[中段省略]…\n" + text[-tail:]
+
+
 class RecoveryPolicy:
     """Decides how to recover from recoverable model errors and truncation."""
 
@@ -52,10 +66,15 @@ class RecoveryPolicy:
         client: AnthropicApiClient,
         max_tokens: int,
         sleep: Callable[[float], Awaitable[None]] | Any = asyncio.sleep,
+        data_state_provider: Callable[[], Awaitable[str | None]] | None = None,
     ) -> None:
         self.compressor = compressor
         self.client = client
         self.max_tokens = max_tokens
+        # D4: runtime-injected data state (kernel variable map + live recall
+        # ids). Dependency inversion — recovery imports nothing new; a missing
+        # or failing provider just omits the data-state sections.
+        self.data_state_provider = data_state_provider
         self._sleep = sleep
 
     async def attempt_recovery(
@@ -87,9 +106,21 @@ class RecoveryPolicy:
         if not state.has_attempted_reactive_compact:
             summary = await self._summarize_for_compact(state.messages)
             compacted = self.compressor.force_auto_compact(state.messages, summary=summary)
+            messages = compacted.messages
+            # D4/P2-2: re-inject the data state right after compaction so the
+            # model still knows which datasets exist and how to re-fetch them.
+            data_state = await self._current_data_state()
+            if data_state:
+                messages = messages + [
+                    Message(
+                        role="user",
+                        content="[数据状态(压缩后重注入)]\n" + data_state,
+                        is_meta=True,
+                    )
+                ]
             return (
                 state.with_messages(
-                    compacted.messages,
+                    messages,
                 )
                 .with_has_attempted_reactive_compact(True)
                 .with_transition(
@@ -110,23 +141,47 @@ class RecoveryPolicy:
             ).with_transition(ContinueReason.TRANSIENT_RETRY)
         return None
 
+    async def _current_data_state(self) -> str | None:
+        """Pull the runtime data state via the injected provider (fail-open)."""
+        if self.data_state_provider is None:
+            return None
+        try:
+            return await self.data_state_provider()
+        except Exception as e:
+            logger.debug("data_state_provider failed, omitting data state: %r", e)
+            return None
+
     async def _summarize_for_compact(self, messages: list[Message]) -> str | None:
         """Produce an LLM summary of the messages auto-compact will drop.
 
         Best-effort: any failure (mock client without call_model, API error)
         degrades to None, and AutoCompactStrategy falls back to its local
-        placeholder marker.
+        placeholder marker. D4: the digest keeps BOTH the head (early schema
+        conclusions) and the tail (recent tool results); the prompt is a
+        structured handoff template with fixed sections, fed with the runtime
+        data state when a provider is wired.
         """
         dropped = self.compressor.auto_compact.preview_removed(messages)
         if not dropped:
             return None
         digest = "\n\n".join(message_to_text(m) for m in dropped)
-        digest = digest[-self.SUMMARIZE_INPUT_CHARS :]
+        digest = _head_tail(digest, self.SUMMARIZE_INPUT_CHARS)
         prompt = (
-            "以下是一段数据分析对话中即将被压缩丢弃的历史。请用不超过 500 token 输出"
-            "结构化摘要,只保留:已读取的文件与数据 schema、关键数值结论、"
-            "用户明确的偏好或约束、尚未完成的事项。\n\n" + digest
+            "以下是一段数据分析对话中即将被压缩丢弃的历史(头尾拼接,中段已省略)。"
+            "请输出结构化交接摘要(handoff),严格按分节,每节至多 3 行,总长不超过 500 token:\n"
+            "1. 任务目标与硬约束\n"
+            "2. 已读文件与各表 schema(列名/类型/行数)\n"
+            "3. 现存数据变量(核对下方运行时数据态后引用)\n"
+            "4. 关键数值结论与已确认口径\n"
+            "5. 未决事项\n"
+            "6. 可回取 result_id(引用下方运行时数据态)\n"
+            "没有内容的分节写「无」;不得编造未出现的信息;"
+            "这是持续对话的中间压缩,不要做收尾总结。\n"
         )
+        data_state = await self._current_data_state()
+        if data_state:
+            prompt += "\n[运行时数据态(供第 3/6 节)]\n" + data_state + "\n"
+        prompt += "\n" + digest
         try:
             response = await self.client.call_model(
                 messages=[{"role": "user", "content": prompt}],

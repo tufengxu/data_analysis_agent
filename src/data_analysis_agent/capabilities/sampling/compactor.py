@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from .config import SamplingConfig
 from .result_store import ResultStore
@@ -47,6 +47,40 @@ def collapse_digest(content: str) -> str | None:
             f'retrieve_result(result_id="{rid.group(1)}")]'
         )
     return f'[collapsed: summarized result · retrieve_result(result_id="{rid.group(1)}")]'
+
+
+def data_state_block(
+    frames: list[dict[str, Any]] | None = None,
+    results: list[dict[str, Any]] | None = None,
+) -> str:
+    """Format the runtime data state as a compact re-injectable block (D4).
+
+    ``frames``: ``[{"name", "rows", "cols"}]`` (kernel DataFrames);
+    ``results``: ``[{"id", "tool", "bytes"}]`` (live ResultStore entries).
+    The format lives in the capability layer so every harness's compaction
+    re-injects the same shape; inputs are plain dicts, so any base can feed
+    them from its own introspection. Returns "" when there is nothing to
+    report.
+    """
+    lines: list[str] = []
+    if frames:
+        lines.append("kernel 数据变量:")
+        for frame in frames[:20]:
+            name = str(frame.get("name", "?"))
+            rows, cols = frame.get("rows"), frame.get("cols")
+            if isinstance(rows, int) and isinstance(cols, int):
+                lines.append(f"- {name}: {rows:,} 行 × {cols} 列")
+            else:
+                lines.append(f"- {name}: shape 未知")
+    if results:
+        lines.append("可回取结果(TTL 内,原文已落盘):")
+        for entry in results[:20]:
+            rid = str(entry.get("id", "?"))
+            tool = str(entry.get("tool", "") or "?")
+            size = entry.get("bytes")
+            size_text = f", {size // 1024}KB" if isinstance(size, int) else ""
+            lines.append(f"- {rid}(tool={tool}{size_text})")
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True)

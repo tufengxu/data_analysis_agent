@@ -26,10 +26,10 @@
 
 ## P3 — PR-3:compaction 保数据态 + 重注入(P0-4+P2-2)
 
-- [ ] 3.1 能力层:ResultStore.alive_ids() + 数据态文本块格式化助手;v1 侧:KernelManager.list_dataframes() 自省
-- [ ] 3.2 RecoveryPolicy 注入 data_state_provider(消费能力层助手);摘要输入头尾拼接;handoff 模板;压缩后重注入 meta 消息
-- [ ] 3.3 runtime 装配 provider
-- [ ] 3.4 测试:头尾拼接、provider 注入/失败降级、重注入;test_recovery 现三测绿
+- [x] 3.1 能力层:data_state_block(compactor.py)+ ResultStore.alive_ids();v1 侧:KernelManager.list_dataframes() 自省探针(test_kernel ×2、test_alive_ids_newest_first_and_expiry、TestDataStateBlock)
+- [x] 3.2 RecoveryPolicy 注入 data_state_provider;_head_tail 头尾拼接;handoff 六节模板 + 运行时数据态分节;压缩后重注入 meta 消息(test_reactive_compact_reinjects_data_state 等 ×4)
+- [x] 3.3 runtime._build_data_state_provider 装配(kernel + result_store → AgentLoop → RecoveryPolicy)
+- [x] 3.4 test_recovery 现三测绿(空丢弃不调模型/失败降级 None/逐字透传均保持)
 
 ## P4 — PR-4a:变量地图(P1-1 第一步)
 
