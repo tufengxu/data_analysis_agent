@@ -447,3 +447,41 @@ def test_sandbox_outliers_round_robin_across_numeric_columns():
     summary2 = ss.summarize_dataframe(df2, max_sample_rows=5, max_outlier_rows=3)
     assert summary2["outlier_rows"]
     assert all(r["outlier_col"] == "b" for r in summary2["outlier_rows"])
+
+
+# --------------------------------------------------------------------------- #
+# D2 pressure-scaled trigger + recall-page exemption
+# --------------------------------------------------------------------------- #
+def _kv_lines(n: int) -> str:
+    return "\n".join(f"k{i}=v{i}" for i in range(n))
+
+
+def test_pressure_scaled_trigger_compacts_earlier():
+    config = SamplingConfig(trigger_chars=8000)  # scale 0.5 → effective 4000 at p=1
+    content = _kv_lines(500)
+    assert 4000 < len(content) <= 8000
+    out_low, was_low = compact_result(content, 50_000, config, context_pressure=0.0)
+    out_high, was_high = compact_result(content, 50_000, config, context_pressure=1.0)
+    assert was_low is False and out_low == content
+    assert was_high is True and len(out_high) < len(content)
+
+
+def test_trigger_pressure_floor_bounds_scaling():
+    config = SamplingConfig(trigger_chars=3000)  # scaled 1500 clamped to floor 2000
+    big = _kv_lines(240)
+    small = _kv_lines(180)
+    assert len(big) > 2000 and len(small) < 2000
+    _, was_big = compact_result(big, 50_000, config, context_pressure=1.0)
+    _, was_small = compact_result(small, 50_000, config, context_pressure=1.0)
+    assert was_big is True
+    assert was_small is False
+
+
+def test_recall_page_exempt_from_compaction():
+    page = "[result_id=r-1 | lines 0-50 of 2000 | tool=t]\n" + "\n".join(
+        f"row{i},cat{i % 3},{i}" for i in range(600)
+    )
+    config = SamplingConfig(trigger_chars=200)
+    out, was = compact_result(page, 50_000, config, context_pressure=1.0)
+    assert was is False
+    assert out == page  # deliberate raw recall: never re-summarized

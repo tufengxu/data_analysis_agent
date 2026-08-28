@@ -127,10 +127,12 @@ export default async function daaPiExtension(pi: ExtensionAPI): Promise<void> {
   }
 
   // ---- seam 2: oversized tool_result compaction (best-effort, fail-open) ----
+  // D0: no local trigger mirror — cheap ask floor, server decides (and its
+  // recall-page exemption applies transparently).
   pi.on("tool_result", async (event) => {
     try {
       const text = contentText(event.content);
-      if (text.length <= seam.compactionTriggerChars) return undefined;
+      if (text.length <= seam.compactAskFloor) return undefined;
       const handle = sanitizeId(event.toolCallId) || `pi-${Date.now()}`;
       const envelope = await runCapability("sampling_compact_result", {
         content: text,
@@ -142,11 +144,17 @@ export default async function daaPiExtension(pi: ExtensionAPI): Promise<void> {
       const data = envelope.data ?? {};
       if (!envelope.ok || data.was_compacted !== true) return undefined;
       const resultId = typeof data.result_id === "string" && data.result_id ? data.result_id : handle;
+      const replacement = envelope.content ?? "";
+      // The server already appends its own (Chinese) recall hint when it
+      // persisted the original — only add the English one when it didn't.
+      const text2 = replacement.includes("retrieve_result(")
+        ? replacement
+        : `${replacement}\n\n[full result cached; retrieve via retrieve_result(result_id=${resultId}, offset=0, limit=50)]`;
       return {
         content: [
           {
             type: "text",
-            text: `${envelope.content ?? ""}\n\n[full result cached; retrieve via retrieve_result(result_id=${resultId}, offset=0, limit=50)]`,
+            text: text2,
           },
         ],
       };

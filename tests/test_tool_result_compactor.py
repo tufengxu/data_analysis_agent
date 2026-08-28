@@ -10,6 +10,7 @@ from data_analysis_agent.capabilities.sampling import (
     CompactRequest,
     DefaultToolResultCompactor,
     SamplingConfig,
+    collapse_digest,
     recall_hint,
 )
 from data_analysis_agent.capabilities.sampling.result_store import ResultStore
@@ -143,6 +144,31 @@ class TestV1Equivalence:
         compactor = DefaultToolResultCompactor()
         result = compactor.compact(CompactRequest(content="x" * 10, max_chars=1))
         assert isinstance(result.content, str)
+
+
+class TestCollapseDigest:
+    """D3:session 层 mask 旧 tool_result 时的一行 digest + 回取句柄助手。"""
+
+    TABLE_SUMMARY = (
+        "### 数据采样摘要 (sampled view)\n"
+        "- rows=12,000 · cols=8 · method=stratified[category] · fidelity=mid\n"
+        "…\n\n" + recall_hint("abc")
+    )
+
+    def test_table_summary_digest(self) -> None:
+        assert collapse_digest(self.TABLE_SUMMARY) == (
+            '[collapsed: table 12,000 rows × 8 cols · retrieve_result(result_id="abc")]'
+        )
+
+    def test_text_digest_without_shape(self) -> None:
+        content = "### 文本结果摘要 (sampled view)\n…\n\n" + recall_hint("t9")
+        assert collapse_digest(content) == (
+            '[collapsed: summarized result · retrieve_result(result_id="t9")]'
+        )
+
+    def test_missing_markers_return_none(self) -> None:
+        assert collapse_digest("plain text without markers") is None
+        assert collapse_digest("") is None
 
 
 class TestSandboxSelfContainmentGuard:

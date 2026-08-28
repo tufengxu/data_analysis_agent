@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from ..capabilities.sampling.compactor import collapse_digest
 from ..state_machine import Message
 
 # Heuristics: English/code ~1 token per 4 chars; CJK and other non-ASCII text
@@ -325,17 +326,25 @@ class ContextCollapseStrategy:
             saved += estimate_tokens(message_to_text(msg))
             if _is_tool_result_message(msg):
                 # Preserve tool_use/tool_result pairing: stub each block
-                # instead of replacing the message with plain text.
+                # instead of replacing the message with plain text. The stub
+                # keeps a one-line digest + recall handle when the collapsed
+                # content carries sampling markers (D3), so the model can
+                # still re-fetch the original.
                 assert isinstance(msg.content, list)
-                stubs: list[dict[str, Any]] = [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.get("tool_use_id", ""),
-                        "content": "[Earlier tool result collapsed]",
-                    }
-                    for block in msg.content
-                    if isinstance(block, dict) and block.get("type") == "tool_result"
-                ]
+                stubs: list[dict[str, Any]] = []
+                for block in msg.content:
+                    if not (isinstance(block, dict) and block.get("type") == "tool_result"):
+                        continue
+                    raw = block.get("content", "")
+                    content_text = raw if isinstance(raw, str) else ""
+                    stubs.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.get("tool_use_id", ""),
+                            "content": collapse_digest(content_text)
+                            or "[Earlier tool result collapsed]",
+                        }
+                    )
                 result.append(Message(role="user", content=stubs, is_meta=msg.is_meta))
             else:
                 result.append(

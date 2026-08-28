@@ -19,6 +19,12 @@ class SamplingConfig:
     Attributes:
         trigger_chars: Results larger than this (chars) get summarized; below,
             they pass through unchanged (~2k tokens at 4 chars/token).
+        trigger_pressure_scale: how strongly context pressure lowers the
+            effective trigger (D2): effective = max(trigger_floor_chars,
+            trigger_chars * (1 - scale * pressure)). 0 disables scaling.
+        trigger_floor_chars: lower bound for the effective trigger — a cheap
+            ask floor adapters may mirror (the server stays the single source
+            of truth for the real decision).
         fidelity_level: one of ``low`` / ``mid`` / ``high``.
         max_sample_rows: number of representative detail rows to keep.
         top_k: number of high-frequency values to keep per categorical column.
@@ -33,6 +39,8 @@ class SamplingConfig:
     """
 
     trigger_chars: int = 8000
+    trigger_pressure_scale: float = 0.5
+    trigger_floor_chars: int = 2000
     fidelity_level: str = "mid"
     max_sample_rows: int = 20
     top_k: int = 10

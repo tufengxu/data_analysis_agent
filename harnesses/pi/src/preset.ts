@@ -52,13 +52,20 @@ export const DATA_ANALYST_SYSTEM_PROMPT = [
   "超大工具结果会被自动压缩为采样摘要;需要原文时用 daa_retrieve_result(result_id=..., offset=0, limit=50) 分页取回。",
 ].join("\n");
 
-export const DEFAULT_COMPACT_TRIGGER = 8000;
+// D0 单一事实源:触发判定(含压力自适应与回取页豁免)只在能力层;
+// 适配器仅做廉价下界预筛,服从服务端 was_compacted 裁决。
+export const DEFAULT_COMPACT_ASK_FLOOR = 2000;
 export const DEFAULT_MAX_CHARS = 50000;
 export const DEFAULT_CONTEXT_PRESSURE = 0.5;
 
 export interface SeamConfig {
-  /** tool_result textual length above this triggers best-effort compaction. */
-  compactionTriggerChars: number;
+  /**
+   * Cheap pre-filter floor: tool results longer than this are ASKED of the
+   * capability server; the server's own (pressure-adaptive) trigger decides
+   * whether compaction actually happens. Keep at/below the server's
+   * trigger_floor_chars to never miss a compaction.
+   */
+  compactAskFloor: number;
   /** 0..1 context pressure hint passed to sampling_compact_result. */
   contextPressure: number;
   /** Length budget passed as max_chars. */
@@ -67,11 +74,10 @@ export interface SeamConfig {
 
 /** Read the seam knobs from env (invalid values fall back to defaults). */
 export function seamConfigFromEnv(env: NodeJS.ProcessEnv = process.env): SeamConfig {
-  const trigger = Number.parseInt(env.DAA_COMPACT_TRIGGER ?? "", 10);
+  const floor = Number.parseInt(env.DAA_COMPACT_FLOOR ?? env.DAA_COMPACT_TRIGGER ?? "", 10);
   const pressure = Number.parseFloat(env.DAA_PI_PRESSURE ?? "");
   return {
-    compactionTriggerChars:
-      Number.isFinite(trigger) && trigger > 0 ? trigger : DEFAULT_COMPACT_TRIGGER,
+    compactAskFloor: Number.isFinite(floor) && floor > 0 ? floor : DEFAULT_COMPACT_ASK_FLOOR,
     contextPressure:
       Number.isFinite(pressure) && pressure >= 0 && pressure <= 1 ? pressure : DEFAULT_CONTEXT_PRESSURE,
     maxChars: DEFAULT_MAX_CHARS,
@@ -88,10 +94,10 @@ export interface PresetDoc {
     capability_server: { command: string; args: string[]; transport: "stdio" };
     compaction: {
       on: "tool_result";
-      trigger_chars: number;
+      ask_floor: number;
       max_chars: number;
       context_pressure: number;
-      env: { DAA_COMPACT_TRIGGER: string; DAA_PI_PRESSURE: string };
+      env: { DAA_COMPACT_FLOOR: string; DAA_PI_PRESSURE: string };
       retrieve: string;
     };
     trajectory: {
@@ -119,11 +125,11 @@ export function buildPresetDoc(env: NodeJS.ProcessEnv = process.env): PresetDoc 
       capability_server: { command: "data-agent-capabilities", args: ["mcp"], transport: "stdio" },
       compaction: {
         on: "tool_result",
-        trigger_chars: seam.compactionTriggerChars,
+        ask_floor: seam.compactAskFloor,
         max_chars: seam.maxChars,
         context_pressure: seam.contextPressure,
         env: {
-          DAA_COMPACT_TRIGGER: String(seam.compactionTriggerChars),
+          DAA_COMPACT_FLOOR: String(seam.compactAskFloor),
           DAA_PI_PRESSURE: String(seam.contextPressure),
         },
         retrieve: "retrieve_result(result_id=<id>, offset=0, limit=50)",

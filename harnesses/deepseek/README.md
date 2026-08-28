@@ -5,9 +5,12 @@ DataAnalysisAgent 能力层在 DeepSeek Harness(dsh,Cordis 插件运行时)上�
 
 1. **超大工具结果压缩**(`src/index.ts` 挂 `tools/post-execute` 瀑布):官方
    `@deepseek-ai/dsh-mcp-client` 插件把能力服务器的 19 个工具以
-   `mcp__daa__<capability_name>` 形态挂进 dsh;当某次调用的文本结果超过阈值
-   (默认 8000 字符,`DAA_COMPACT_TRIGGER` 可调)时,经共享客户端调用
-   `sampling_compact_result`,把结果替换为「数据采样摘要 + 回取句柄」。
+   `mcp__daa__<capability_name>` 形态挂进 dsh;当某次调用的文本结果超过廉价
+   预筛下界(默认 2000 字符,`DAA_COMPACT_FLOOR` 可调,旧名
+   `DAA_COMPACT_TRIGGER` 仍兼容)时,经共享客户端调用
+   `sampling_compact_result` 并服从服务端裁决——真正的触发阈值(含压力
+   自适应与回取页豁免)只在能力层实现,本侧不镜像;命中时把结果替换为
+   「数据采样摘要 + 回取句柄」。
 2. **轨迹事件旁路**(挂 `session/event`):把 dsh 的持久会话记录翻译成
    `daa.trajectory.v1` 契约事件(只记结构不记数值:digest 与计数),按会话排队,
    在 `turn/end` 批量写入 `evolution_record_event`(fire-and-forget,绝不影响主循环)。
@@ -46,7 +49,7 @@ npm run smoke       # node smoke/smoke.ts,打印 [PASS]/[FAIL] 与 DSH SMOKE: PA
 2000 行大表经 `compactToolResult`(resultId=smoke-dsh-1)压缩后含「数据采样摘要」
 与 `retrieve_result` 回取提示;`retrieve_result` 取回原文首行;
 `evolution_record_event` 合法/非法(validation_error)事件;
-`shouldCompact` 边界与 `dshRecordToTrajectoryEvent` 各类记录的纯单元断言。
+`shouldAsk` 预筛边界与 `dshRecordToTrajectoryEvent` 各类记录的纯单元断言。
 
 环境隔离说明:MCP stdio transport 只向子进程传递安全名单环境变量
 (HOME/PATH/USER…),`DAA_CAPABILITIES_*` 不会透传,冒烟脚本以 **HOME 覆盖 +
@@ -107,7 +110,8 @@ export DEEPSEEK_API_KEY=sk-...
   插件行 `name` 字段,只能用静态字符串)。
 - 想看旁路细节:`DAA_DSH_DEBUG=1` 会在 stderr 打印 post-execute 长度、压缩前后
   字符数、每条 session/event 与被拒的轨迹事件。
-- 压缩没触发:阈值 `DAA_COMPACT_TRIGGER`(默认 8000)或服务端增益门控判定
-  「摘要不够小、原文又未超 max_chars」→ 原样保留(契约行为)。
+- 压缩没触发:低于预筛下界 `DAA_COMPACT_FLOOR`(默认 2000),或服务端触发
+  阈值/增益门控判定「不必压、摘要不够小、原文又未超 max_chars」→ 原样保留
+  (契约行为;本侧不镜像服务端触发逻辑)。
 - 轨迹没落盘:确认 `~/.daa/trajectories/v2/`(或 `DAA_CAPABILITIES_EVOLUTION_ROOT`);
   批量写入发生在 `turn/end` 与插件卸载时,均为尽力而为。

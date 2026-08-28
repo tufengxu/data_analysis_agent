@@ -18,7 +18,7 @@ import type {} from "@deepseek-ai/dsh-tools";
 import type {} from "@deepseek-ai/dsh-session";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { callCapability, connectCapabilityServer } from "../../shared/capability-client.ts";
-import { compactToolResult, shouldCompact } from "./compaction.ts";
+import { compactToolResult, shouldAsk } from "./compaction.ts";
 import { digest, dshRecordToTrajectoryEvent, type TrajectoryEventDict } from "./translate.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -35,13 +35,15 @@ interface SessionTrajectoryState {
   turn: number;
 }
 
-function triggerFromEnv(): number {
-  const parsed = Number.parseInt(process.env.DAA_COMPACT_TRIGGER ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 8000;
+function askFloorFromEnv(): number {
+  // D0: local knob is only the cheap pre-filter floor; the server's
+  // pressure-adaptive trigger is the single source of truth.
+  const parsed = Number.parseInt(process.env.DAA_COMPACT_FLOOR ?? process.env.DAA_COMPACT_TRIGGER ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 2000;
 }
 
 export function apply(ctx: Context): void {
-  const triggerChars = triggerFromEnv();
+  const askFloor = askFloorFromEnv();
   let clientPromise: Promise<Client> | null = null;
   const states = new Map<string, SessionTrajectoryState>();
 
@@ -77,7 +79,7 @@ export function apply(ctx: Context): void {
       // mcp__daa__* tools return the DAA JSON envelope; compact the INNER
       // content so the sampler sees the real table/text, not escaped JSON.
       const inner = unwrapEnvelopeContent(text) ?? text;
-      if (!shouldCompact(inner, triggerChars)) return decision;
+      if (!shouldAsk(inner, askFloor)) return decision;
       const client = await sharedClient();
       if (client === null) return decision;
       const replacement = await compactToolResult(client, {

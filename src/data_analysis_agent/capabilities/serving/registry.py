@@ -69,6 +69,8 @@ def _sampling_config_from(input_data: dict[str, Any]) -> SamplingConfig:
             field
             for field in (
                 "trigger_chars",
+                "trigger_pressure_scale",
+                "trigger_floor_chars",
                 "max_sample_rows",
                 "top_k",
                 "quantiles",
