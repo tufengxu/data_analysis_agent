@@ -37,6 +37,8 @@ class SamplingConfig:
         include_outliers: append IQR-flagged outlier rows to the summary.
         max_outlier_rows: cap on appended outlier rows.
         seed: deterministic sampling seed.
+        render_format: ``markdown`` (default, unchanged) or ``kv`` — the
+            compact ``col1=v1; col2=v2`` sample-row render (D9 A/B arm).
         trigger_rows: in the sandbox, a ``result`` DataFrame with more rows than
             this is auto-summarized instead of printed in full.
     """
@@ -53,6 +55,7 @@ class SamplingConfig:
     include_outliers: bool = True
     max_outlier_rows: int = 5
     seed: int = 0
+    render_format: str = "markdown"
     trigger_rows: int = 50
     # Compression-gain gating (pressure-adaptive): a summary replaces the
     # original only if it is shorter than original * accept_ratio, where

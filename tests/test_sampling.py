@@ -501,3 +501,22 @@ def test_render_variable_title():
     }
     assert render_summary_dict(summary, variable="orders").startswith("### orders · 数据采样摘要")
     assert render_summary_dict(summary).startswith("### 数据采样摘要")
+
+
+def test_render_kv_format_arm():
+    summary = {
+        "n_rows": 10,
+        "n_cols": 2,
+        "columns": [],
+        "sample_rows": [{"region": "a", "units": 100000}, {"region": "b", "units": 7}],
+        "outlier_rows": [],
+        "sampling_method": "reservoir",
+        "fidelity_level": "mid",
+        "notes": [],
+        "truncated": False,
+    }
+    out = render_summary_dict(summary, render_format="kv")
+    assert "region=a; units=100,000" in out
+    assert "region=b; units=7" in out
+    assert "|" not in out.split("代表性样本行", 1)[1].split(">", 1)[0]  # no table pipes in rows
+    assert render_summary_dict(summary).count("---") >= 1  # markdown default unchanged

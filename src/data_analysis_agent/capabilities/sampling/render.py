@@ -18,6 +18,7 @@ def render_summary_dict(
     *,
     stats_exact: bool = True,
     variable: str | None = None,
+    render_format: str = "markdown",
 ) -> str:
     """Render a :class:`TableSummary`-shaped dict to Markdown.
 
@@ -54,12 +55,12 @@ def render_summary_dict(
     sample_rows = summary.get("sample_rows", [])
     if sample_rows:
         lines += ["", f"**代表性样本行 ({len(sample_rows)} of {n_rows:,}):**", ""]
-        lines += _rows_md(sample_rows)
+        lines += _rows_md(sample_rows, render_format=render_format)
 
     outlier_rows = summary.get("outlier_rows", [])
     if outlier_rows:
         lines += ["", f"**离群行 (IQR outliers, {len(outlier_rows)}):**", ""]
-        lines += _rows_md(outlier_rows)
+        lines += _rows_md(outlier_rows, render_format=render_format)
 
     for note in summary.get("notes", []):
         lines += ["", f"> {note}"]
@@ -132,7 +133,7 @@ def render_text_digest(digest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _rows_md(rows: list[dict[str, Any]]) -> list[str]:
+def _rows_md(rows: list[dict[str, Any]], *, render_format: str = "markdown") -> list[str]:
     if not rows:
         return []
     cols: list[str] = []
@@ -140,6 +141,14 @@ def _rows_md(rows: list[dict[str, Any]]) -> list[str]:
         for key in row:
             if key not in cols:
                 cols.append(key)
+    if render_format == "kv":
+        # D9 A/B arm: one compact "col=v; col=v" line per row — cheaper than
+        # the markdown table, accuracy must be decided by eval, not by default.
+        out: list[str] = []
+        for row in rows:
+            pairs = "; ".join(f"{c}={_cell(row.get(c, ''))}" for c in cols)
+            out.append(pairs)
+        return out
     out = [
         "| " + " | ".join(_cell(c) for c in cols) + " |",
         "|" + "|".join("---" for _ in cols) + "|",

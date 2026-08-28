@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from data_analysis_agent.capabilities.sampling import (
+    CompactionStats,
     CompactRequest,
     DefaultToolResultCompactor,
     SamplingConfig,
@@ -184,6 +185,28 @@ class TestV1Equivalence:
         compactor = DefaultToolResultCompactor()
         result = compactor.compact(CompactRequest(content="x" * 10, max_chars=1))
         assert isinstance(result.content, str)
+
+
+class TestCompactionStats:
+    """D8 后半:压缩计量(eval 采样臂与运行时可观测)。"""
+
+    def test_counts_compacted_and_passthrough(self) -> None:
+        stats = CompactionStats()
+        compactor = DefaultToolResultCompactor(stats=stats)
+        big = _big_csv(1500)
+        compactor.compact(CompactRequest(content=big, max_chars=50_000, context_pressure=0.9))
+        compactor.compact(CompactRequest(content="tiny", max_chars=50_000))
+        assert stats.compacted_count == 1
+        assert stats.passthrough_count == 1
+        assert stats.chars_before == len(big)
+        assert 0 < stats.chars_after < len(big)
+        assert stats.ratio() is not None and stats.ratio() < 0.5
+
+    def test_no_stats_attached_is_fully_optional(self) -> None:
+        result = DefaultToolResultCompactor().compact(
+            CompactRequest(content=_big_csv(800), max_chars=50_000, context_pressure=0.9)
+        )
+        assert result.was_compacted is True
 
 
 class TestDataStateBlock:

@@ -85,7 +85,9 @@ def summarize_text(text: str, config: SamplingConfig | None = None) -> str:
     if parsed is not None:
         headers, rows = parsed
         summary = summarize_table_rows(headers, rows, config)
-        return render.render_summary_dict(summary.to_dict(), stats_exact=False)
+        return render.render_summary_dict(
+            summary.to_dict(), stats_exact=False, render_format=config.render_format
+        )
     return render.render_text_digest(_text_digest(text, config))
 
 
