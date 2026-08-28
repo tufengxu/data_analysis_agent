@@ -118,7 +118,31 @@ def test_collapse_prefers_heavy_tool_results_and_preserves_pairing():
     assert isinstance(collapsed.content, list)
     assert collapsed.content[0]["type"] == "tool_result"
     assert collapsed.content[0]["tool_use_id"] == "tu_big"
+    # plain content has no sampling markers → fail-closed placeholder
     assert collapsed.content[0]["content"] == "[Earlier tool result collapsed]"
+
+
+def test_collapse_stub_carries_digest_and_recall_handle():
+    compacted = (
+        "### 数据采样摘要 (sampled view)\n"
+        "- rows=12,000 · cols=8 · method=reservoir · fidelity=mid\n"
+        "…\n\n"
+        '[完整结果已缓存。回取: retrieve_result(result_id="rx", offset=0, limit=50)]'
+    )
+    messages = [
+        Message(role="user", content="question"),
+        Message(role="assistant", content="short text"),
+        _tool_result_msg("tu_big", content=compacted),
+        Message(role="assistant", content="conclusion"),
+        Message(role="user", content="follow-up"),
+        Message(role="assistant", content="tail"),
+    ]
+    strategy = ContextCollapseStrategy()
+    result = strategy.apply(messages, budget=0)
+
+    stub = result.messages[2].content[0]["content"]
+    assert 'retrieve_result(result_id="rx")' in stub
+    assert "12,000" in stub and "8 cols" in stub
 
 
 def test_collapse_never_stages_assistant_tool_use():

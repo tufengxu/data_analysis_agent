@@ -26,8 +26,9 @@ npm run smoke       # 不依赖任何 API key:19 工具清单、读表、因果�
 
 `src/preset.ts` 是装配清单:中文数据分析系统提示、19 个能力工具的注册名
 (`daa_<capability>`,如 `daa_tabular_read_file` / `daa_retrieve_result`)、
-压缩接缝配置(触发阈值 8000 / max_chars 50000 / 压力 0.5,可经
-`DAA_COMPACT_TRIGGER` / `DAA_PI_MAX_CHARS` / `DAA_PI_PRESSURE` 覆盖)。
+压缩接缝配置(预筛下界 2000 / max_chars 50000 / 压力 0.5,可经
+`DAA_COMPACT_FLOOR`(旧名 `DAA_COMPACT_TRIGGER` 兼容)/ `DAA_PI_MAX_CHARS` /
+`DAA_PI_PRESSURE` 覆盖;真实触发阈值含压力自适应,只在能力层裁决)。
 
 ## 真实 key E2E(未验证 —— 本机无 ANTHROPIC_API_KEY)
 

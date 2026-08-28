@@ -22,6 +22,15 @@ from .model import ColumnSummary, TableSummary
 
 _NUM_RE = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
 _NULL_TOKENS = {"", "nan", "none", "null", "na", "n/a", "<na>"}
+# retrieve_result pages start with this header marker; they are deliberate
+# raw-recall fetches and must never be re-summarized (D2).
+_RECALL_PAGE_PREFIX = "[result_id="
+
+
+def _effective_trigger(config: SamplingConfig, pressure: float) -> int:
+    """D2: the trigger lowers linearly with context pressure, floored."""
+    scaled = int(config.trigger_chars * (1 - config.trigger_pressure_scale * pressure))
+    return max(config.trigger_floor_chars, scaled)
 
 
 def compact_result(
@@ -32,22 +41,27 @@ def compact_result(
 ) -> tuple[str, bool]:
     """Compact an oversized tool result with pressure-adaptive gain gating.
 
-    Returns ``(content, was_compacted)``. Results at or below
-    ``config.trigger_chars`` pass through untouched. After summarizing, the
-    summary replaces the original only if it is short enough relative to an
-    acceptance ratio that scales with ``context_pressure`` (0=empty→strict,
-    1=near full→lenient) — unless the original exceeds ``max_chars`` (which would
-    otherwise be truncated), in which case compaction is forced.
+    Returns ``(content, was_compacted)``. Retrieved result pages (content
+    starting with the ``[result_id=`` page header) pass through untouched —
+    they are explicit raw-recall actions. Results at or below the
+    pressure-scaled effective trigger pass through unchanged. After
+    summarizing, the summary replaces the original only if it is short enough
+    relative to an acceptance ratio that scales with ``context_pressure``
+    (0=empty→strict, 1=near full→lenient) — unless the original exceeds
+    ``max_chars`` (which would otherwise be truncated), in which case
+    compaction is forced.
     """
     config = config or SamplingConfig()
-    if len(content) <= config.trigger_chars:
+    pressure = min(1.0, max(0.0, context_pressure))
+    if content.startswith(_RECALL_PAGE_PREFIX):
+        return content, False
+    if len(content) <= _effective_trigger(config, pressure):
         return content, False
     try:
         out = summarize_text(content, config)
     except Exception:
         out = _head_tail_truncate(content, config.trigger_chars)
 
-    pressure = min(1.0, max(0.0, context_pressure))
     accept_ratio = (
         config.gate_ratio_low_pressure
         + (config.gate_ratio_high_pressure - config.gate_ratio_low_pressure) * pressure

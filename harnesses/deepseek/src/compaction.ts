@@ -1,12 +1,15 @@
 /**
- * Compaction seam for the dsh adapter: pure decision + a thin executor over
- * the shared capability server's `sampling_compact_result` capability.
+ * Compaction seam for the dsh adapter: a thin executor over the shared
+ * capability server's `sampling_compact_result` capability.
  *
- * Decision (`shouldCompact`) mirrors the server's own trigger (trigger_chars
- * = 8000 by default): strictly greater than the threshold compacts. The
- * executor is fail-open-by-original: ANY error or a "no gain" answer returns
- * `null`, meaning "keep the original result untouched" — compaction is a
- * side channel and must never make a tool result worse.
+ * D0 single-source-of-truth: this side does NOT mirror the server's
+ * (pressure-adaptive) trigger. `shouldAsk` is only a cheap lower-bound
+ * pre-filter — anything above the floor is sent to the server, whose own
+ * trigger decides; a `was_compacted=false` answer keeps the original
+ * byte-for-byte. The executor is fail-open-by-original: ANY error or a
+ * "no gain" answer returns `null`, meaning "keep the original result
+ * untouched" — compaction is a side channel and must never make a tool
+ * result worse.
  *
  * Envelope contract (verified against
  * src/data_analysis_agent/capabilities/serving/registry.py):
@@ -33,9 +36,13 @@ export interface CompactAsk {
   pressure?: number;
 }
 
-/** True when the text exceeds the compaction trigger (strictly greater). */
-export function shouldCompact(text: string, trigger = 8000): boolean {
-  return text.length > trigger;
+/**
+ * True when the text exceeds the ask floor — the cheap pre-filter below
+ * which we skip the server roundtrip entirely. Keep at/below the server's
+ * trigger_floor_chars so no compaction is ever missed.
+ */
+export function shouldAsk(text: string, floor = 2000): boolean {
+  return text.length > floor;
 }
 
 /**

@@ -14,12 +14,39 @@ The v1 ``agent_loop`` seam routes through this same implementation.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
 from .config import SamplingConfig
 from .result_store import ResultStore
 from .text_summary import compact_result, detect_table
+
+# Rendered-summary meta line ("- rows=12,000 · cols=8 · method=…") and the
+# recall handle embedded by DefaultToolResultCompactor.
+_SUMMARY_HEAD_RE = re.compile(r"- rows=([\d,]+) · cols=(\d+)")
+_RESULT_ID_RE = re.compile(r'retrieve_result\(result_id="([^"]+)"')
+
+
+def collapse_digest(content: str) -> str | None:
+    """One-line digest of an already-compacted tool result (D3).
+
+    Session layers (context collapse in any harness) call this when masking
+    old tool results: it keeps a provenance pointer — row/col shape plus the
+    recall handle — at near-zero token cost. Returns ``None`` on any miss so
+    the caller falls back to its plain placeholder (fail-closed).
+    """
+
+    rid = _RESULT_ID_RE.search(content)
+    if rid is None:
+        return None
+    head = _SUMMARY_HEAD_RE.search(content)
+    if head is not None:
+        return (
+            f"[collapsed: table {head.group(1)} rows × {head.group(2)} cols · "
+            f'retrieve_result(result_id="{rid.group(1)}")]'
+        )
+    return f'[collapsed: summarized result · retrieve_result(result_id="{rid.group(1)}")]'
 
 
 @dataclass(frozen=True)

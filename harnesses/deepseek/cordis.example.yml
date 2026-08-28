@@ -33,7 +33,8 @@
 
     # ---- 本适配插件:超大工具结果压缩 + 轨迹事件旁路 ----
     # 不重复注册 MCP 工具;只挂 tools/post-execute(压缩)与 session/event(轨迹)。
-    # 可选环境变量:DAA_COMPACT_TRIGGER(压缩触发阈值,默认 8000 字符)。
+    # 可选环境变量:DAA_COMPACT_FLOOR(压缩预筛下界,默认 2000 字符;
+    # 真实触发阈值由能力层按压力自适应裁决,本侧不镜像)。
     - id: daa-capabilities
       # 相对路径以 dsh profile 目录(~/.dsh/profiles/<profile>/)为基准解析。
       # 推荐先做软链(见 README「安装」):ln -s <repo>/harnesses/deepseek ~/.dsh/profiles/<profile>/daa

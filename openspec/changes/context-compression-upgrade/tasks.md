@@ -18,11 +18,11 @@
 
 ## P2 — PR-2:触发压力自适应 + 页豁免 + 桩 digest + 适配器解耦(P0-3+D0)
 
-- [ ] 2.1 SamplingConfig 增 trigger_pressure_scale/trigger_floor_chars;compact_result 计算有效触发
-- [ ] 2.2 `[result_id=` 回取页豁免压缩
-- [ ] 2.3 collapse digest 提取助手落位 capabilities/sampling;context/compression 调用(正则提取 + fail-closed 回退)
-- [ ] 2.4 适配器解耦:pi/deepseek 触发镜像改为下界预筛 + 服从服务端 was_compacted;Pi 移除重复英文回取提示;check-ts + 两 smoke 绿
-- [ ] 2.5 测试:压力触发边界、页豁免、桩新旧双路径;gating 四测不动
+- [x] 2.1 SamplingConfig 增 trigger_pressure_scale/trigger_floor_chars;compact_result 计算有效触发(test_pressure_scaled_trigger_compacts_earlier、test_trigger_pressure_floor_bounds_scaling)
+- [x] 2.2 `[result_id=` 回取页豁免压缩(test_recall_page_exempt_from_compaction)
+- [x] 2.3 collapse_digest 助手落位 capabilities/sampling/compactor.py;context/compression 调用(TestCollapseDigest ×3、test_collapse_stub_carries_digest_and_recall_handle;无标记回退旧文案测试保持)
+- [x] 2.4 适配器解耦:pi(preset ask_floor/extension 门与提示去重)/dsh(shouldAsk + askFloorFromEnv,DAA_COMPACT_FLOOR 新名旧名兼容);check-ts + pi/dsh 两 smoke 绿
+- [x] 2.5 gating 四测不动(全部保持绿);serving config_overrides 白名单加 trigger_pressure_scale/trigger_floor_chars
 
 ## P3 — PR-3:compaction 保数据态 + 重注入(P0-4+P2-2)
 

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectCapabilityServer, callCapability } from "../../shared/capability-client.ts";
-import { compactToolResult, shouldCompact } from "../src/compaction.ts";
+import { compactToolResult, shouldAsk } from "../src/compaction.ts";
 import { digest, dshRecordToTrajectoryEvent } from "../src/translate.ts";
 
 // smoke/ -> deepseek -> harnesses -> repo root (fileURLToPath decodes %20 etc).
@@ -53,10 +53,10 @@ function check(name: string, ok: boolean, detail = ""): void {
 }
 
 function unitTests(): void {
-  // shouldCompact boundary: strictly greater than the trigger.
-  check("shouldCompact: == trigger stays", shouldCompact("x".repeat(8000), 8000) === false);
-  check("shouldCompact: trigger+1 compacts", shouldCompact("x".repeat(8001), 8000) === true);
-  check("shouldCompact: default trigger 8000", shouldCompact("x".repeat(8001)) === true);
+  // shouldAsk boundary: cheap pre-filter floor (server owns the real trigger).
+  check("shouldAsk: == floor stays", shouldAsk("x".repeat(2000), 2000) === false);
+  check("shouldAsk: floor+1 asks", shouldAsk("x".repeat(2001), 2000) === true);
+  check("shouldAsk: default floor 2000", shouldAsk("x".repeat(2001)) === true);
 
   // digest shape.
   check("digest: sha256[:12]:len", DIGEST_RE.test(digest("hello")) && digest("hello").endsWith(":5"));
@@ -143,7 +143,7 @@ async function capabilityTests(): Promise<void> {
     check("tabular_read_file: ok envelope on tmp fixture", read.ok === true && (read.content ?? "").includes("alpha"), JSON.stringify(read.error ?? read.content?.slice(0, 80)));
 
     // C. Big-table compaction through the adapter seam.
-    check("big fixture exceeds compaction trigger", shouldCompact(bigText));
+    check("big fixture exceeds ask floor", shouldAsk(bigText));
     const replacement = await compactToolResult(client, {
       text: bigText,
       toolName: "mcp__daa__tabular_read_file",

@@ -95,16 +95,18 @@ function unitTranslate(): void {
 }
 
 function unitPreset(): void {
-  const preset = buildPresetDoc({ DAA_COMPACT_TRIGGER: "1234", DAA_PI_PRESSURE: "0.9" } as NodeJS.ProcessEnv);
+  const preset = buildPresetDoc({ DAA_COMPACT_FLOOR: "1234", DAA_PI_PRESSURE: "0.9" } as NodeJS.ProcessEnv);
   check(
     "preset: manifest json-able, 19 tools, prompt mentions daa_*",
     JSON.stringify(preset).length > 0 && preset.tools.length === CAPABILITY_TOOL_NAMES.length && preset.system_prompt.includes("daa_"),
   );
-  check("preset: seam env parsing", preset.seam.compaction.trigger_chars === 1234 && preset.seam.compaction.context_pressure === 0.9);
+  check("preset: seam env parsing", preset.seam.compaction.ask_floor === 1234 && preset.seam.compaction.context_pressure === 0.9);
+  const legacy = seamConfigFromEnv({ DAA_COMPACT_TRIGGER: "1500" } as NodeJS.ProcessEnv);
+  check("preset: legacy DAA_COMPACT_TRIGGER still honored as floor", legacy.compactAskFloor === 1500);
   const defaults = seamConfigFromEnv({} as NodeJS.ProcessEnv);
   check(
-    "preset: seam defaults (8000 / 0.5 / 50000)",
-    defaults.compactionTriggerChars === 8000 && defaults.contextPressure === 0.5 && defaults.maxChars === 50000,
+    "preset: seam defaults (ask floor 2000 / 0.5 / 50000)",
+    defaults.compactAskFloor === 2000 && defaults.contextPressure === 0.5 && defaults.maxChars === 50000,
   );
 }
 
