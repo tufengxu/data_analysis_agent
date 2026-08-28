@@ -43,5 +43,6 @@ TS 侧(双基座适配器;Node ≥22.19,本机 24.x 已验证):
 - 质量闸:`.venv/bin/python scripts/quality_gate.py`
 - 单测:`.venv/bin/pytest tests/ -v`
 - v2 能力 CLI:`.venv/bin/data-agent-capabilities list|call|mcp|compact|retrieve`
+- 采样臂对比(需 API key):`.venv/bin/python -m data_analysis_agent.evolution compare-sampling`
 - TS 类型检查:`bash harnesses/check-ts.sh`
 - 耗时日志:`.quality/gate-runs.jsonl`(每次全跑追加;供后续耗时分析)。

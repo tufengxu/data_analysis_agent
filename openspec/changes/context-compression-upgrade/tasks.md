@@ -1,6 +1,6 @@
 # Tasks: context-compression-upgrade
 
-状态:进行中(2026-08-28 开工)。各阶段对应独立 PR,完成后在此勾选并附证据。
+状态:主体完成(2026-08-28)。P0-P2 全部落地(PR #56-#63);唯一缓行项 P5(4b delta 渲染),理由与复评条件已记录于 docs/data_context_compression_research.md 落地状态一节。
 
 ## P0 — 规格先行(PR-0)
 
@@ -37,10 +37,10 @@
 - [x] 4a.2 python_exec._compose_result 透传 variable;render_summary_dict(variable=) 标题(test_render_variable_title)
 - [x] 4a.3 快照去重/上限/被截帧下轮补摘要;8MB 序列化回归(kernel 测试套保持绿)
 
-## P5 — PR-4b:schema 去重 delta 渲染(P1-1 第二步,视 4a 效果)
+## P5 — PR-4b:schema 去重 delta 渲染(P1-1 第二步)——⏸ 本轮缓行
 
-- [ ] 5.1 每变量列指纹缓存;render_delta_summary;全量回退
-- [ ] 5.2 测试:delta/全量双路径、阈值边界
+- [ ] 5.1 每变量列指纹缓存;render_delta_summary;全量回退(缓行:先用评测臂观测 4a 后剩余重复量再决定投入)
+- [ ] 5.2 测试:delta/全量双路径、阈值边界(同上)
 
 ## P6 — PR-5:查询下取(P1-2)
 
@@ -68,5 +68,5 @@
 
 ## P10 — 收尾
 
-- [ ] 10.1 文档六件套同步(ARCHITECTURE/AGENTS/README/QUALITY_BAR/DEVELOPMENT/ADR)
-- [ ] 10.2 research 文档加"落地状态"一节;本 tasks 状态行更新
+- [x] 10.1 文档同步:AGENTS(压缩契约段)/README(retrieve 行)/DEVELOPMENT(compare-sampling)/ARCHITECTURE(manifest 增量登记已于各 PR 完成)/ADR 0012;QUALITY_BAR 无需改(七步闸未变)
+- [x] 10.2 research 文档加"落地状态"一节(含 4b 缓行理由);本 tasks 状态行已更新;demo_e2e 复验 PASS

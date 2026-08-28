@@ -123,6 +123,13 @@ cd "/Users/fengxutu/FENGXU TU/Projects/DataAnalysisAgent"
   `agent_loop` 接缝对任意超大字符串用纯 stdlib 兜底(替换盲截断)。沙箱子进程
   `PYTHONPATH=""` 故 `sandbox_summary.py` 以"读源码内联"注入,且 pandas 可选(缺失即退回原样)。
   内核侧 `kernel/kernel_main.py` 同约束(自包含、组合注入)。
+- **上下文压缩契约**(2026-08 context-compression-upgrade,ADR 0012):触发阈值随上下文压力
+  自适应下探(floor 2000),`[result_id=` 回取页豁免压缩;触发判定**只在能力层**(D0 单一
+  事实源,Pi/dsh 适配器只做下界预筛 `DAA_COMPACT_FLOOR` 并服从 `was_compacted` 裁决);
+  压力 ≥0.75 自动降档 low(`adaptive_fidelity=False` 锁档);kernel 按 frame 快照摘要新增/
+  变化 DataFrame 并带 variable 溯源;reactive compaction 用六节 handoff 模板 + 数据态重注入;
+  `retrieve_result` 支持单谓词/投影/采样下取(capabilities/sampling/slicing.py);JSON/JSONL 走结构骨架摘要;
+  `evolution compare-sampling` 出三臂(control/default/low)压缩-保真对比。
 - **跑测试前需可编辑安装**:`uv pip install -e ".[data,dev,web]"`(沙箱会拦 uv 缓存,需放行;web 供质量门 mypy 检查 web/);
   `sampling` 高保真测试依赖 pandas,缺失则 `importorskip` 跳过。
 - **质量准出硬标尺**:每次迭代须过 `scripts/quality_gate.py`(ruff/format/mypy/pytest/drift),
