@@ -16,7 +16,7 @@ import re
 from collections import Counter
 from typing import Any
 
-from . import render
+from . import json_digest, render
 from .config import SamplingConfig
 from .model import ColumnSummary, TableSummary
 
@@ -76,8 +76,11 @@ def compact_result(
 
 
 def summarize_text(text: str, config: SamplingConfig | None = None) -> str:
-    """Summarize arbitrary text; tabular when detectable, else a text digest."""
+    """Summarize arbitrary text; JSON/JSONL skeleton, tabular, else a digest."""
     config = config or SamplingConfig()
+    items = json_digest.parse_json_payload(text)
+    if items is not None:
+        return render.render_json_digest(json_digest.build_json_digest(items, config))
     parsed = detect_table(text)
     if parsed is not None:
         headers, rows = parsed

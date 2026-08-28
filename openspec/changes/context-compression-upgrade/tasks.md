@@ -50,8 +50,8 @@
 
 ## P7 — PR-6:JSON 摘要(P1-3)
 
-- [ ] 7.1 JSON/JSONL 检测 + 骨架 + 采样;render_json_digest;降级链
-- [ ] 7.2 测试:对象数组/JSONL/嵌套/非法回退
+- [x] 7.1 json_digest.py(JSON/JSONL/单对象检测 + 键路径骨架 + 数组长度分布 + 蓄水池代表元素)+ render_json_digest;summarize_text 路由;任何解析失败回退文本 digest(manifest 已登记)
+- [x] 7.2 测试:tests/test_json_digest.py ×5(变体检测/骨架与采样/渲染/compact 路由/非法回退)
 
 ## P8 — PR-7:fidelity 压力自适应(P1-4)
 
